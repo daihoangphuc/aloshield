@@ -28,7 +28,8 @@ jobs:
             set -e
             
             APP_DIR="/opt/aloshield"
-            mkdir -p $APP_DIR
+            sudo mkdir -p $APP_DIR
+            sudo chown -R $USER:$USER $APP_DIR
             cd $APP_DIR
             
             # Pull or clone code
@@ -55,13 +56,13 @@ jobs:
             
             # Build and run with Docker Compose
             echo "🐳 Building and starting containers..."
-            docker compose down || true
-            docker compose build --no-cache
-            docker compose up -d
+            sudo docker compose down || true
+            sudo docker compose build --no-cache
+            sudo docker compose up -d
             
             # Cleanup old images
-            docker image prune -f
+            sudo docker image prune -f
             
             echo "✅ Deploy completed!"
-            docker compose ps
+            sudo docker compose ps
           ENDSSH
