@@ -21,7 +21,7 @@ services:
     container_name: aloshield-frontend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3002:3000"
     environment:
       - NODE_ENV=production
     depends_on:
@@ -32,4 +32,5 @@ services:
 networks:
   aloshield:
     driver: bridge
+
 
