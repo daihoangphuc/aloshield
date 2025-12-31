@@ -1,0 +1,67 @@
+name: Deploy AloShield
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VPS_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+            set -e
+            
+            APP_DIR="/opt/aloshield"
+            mkdir -p $APP_DIR
+            cd $APP_DIR
+            
+            # Pull or clone code
+            if [ -d ".git" ]; then
+              echo "📥 Pulling latest code..."
+              git fetch origin
+              git reset --hard origin/main || git reset --hard origin/master
+            else
+              echo "📥 Cloning repository..."
+              git clone https://github.com/${{ github.repository }}.git .
+            fi
+            
+            # Create backend .env
+            echo "📝 Creating backend .env..."
+            cat > backend/.env << 'ENVEOF'
+          ${{ secrets.ENV_BE }}
+          ENVEOF
+
+            # Create frontend .env.local
+            echo "📝 Creating frontend .env.local..."
+            cat > frontend/.env.local << 'ENVEOF'
+          ${{ secrets.ENV_FE }}
+          ENVEOF
+            
+            # Build and run with Docker Compose
+            echo "🐳 Building and starting containers..."
+            docker compose down || true
+            docker compose build --no-cache
+            docker compose up -d
+            
+            # Cleanup old images
+            docker image prune -f
+            
+            echo "✅ Deploy completed!"
+            docker compose ps
+          ENDSSH
