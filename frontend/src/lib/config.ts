@@ -20,16 +20,33 @@ const getApiUrl = () => {
 
 const getWsUrl = () => {
   if (process.env.NEXT_PUBLIC_WS_URL) {
-    return process.env.NEXT_PUBLIC_WS_URL;
+    // Socket.IO client automatically adds /socket.io/ to the path
+    // Backend has /api prefix, so if WS_URL doesn't end with /api, add it
+    let wsUrl = process.env.NEXT_PUBLIC_WS_URL;
+    // Remove trailing slash if exists
+    wsUrl = wsUrl.replace(/\/$/, '');
+    // If doesn't end with /api, add it (for production with api subdomain)
+    if (!wsUrl.endsWith('/api') && (wsUrl.includes('api.phucndh.site') || wsUrl.includes('api.'))) {
+      wsUrl = `${wsUrl}/api`;
+    }
+    return wsUrl;
   }
   
   // In browser, check if we're on production domain
   if (typeof window !== 'undefined') {
     const host = window.location.hostname;
-    if (host.includes('aloshield.phucndh.site') || host !== 'localhost') {
+    if (host.includes('aloshield.phucndh.site')) {
+      // Use api subdomain for WebSocket (replace aloshield with api)
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const port = window.location.port ? `:${window.location.port}` : '';
-      return `${protocol}//${host}${port}`;
+      // Backend has /api prefix, Socket.IO will add /socket.io automatically
+      return `${protocol}//api.phucndh.site${port}/api`;
+    }
+    if (host !== 'localhost' && host !== '127.0.0.1') {
+      // For other production domains, assume backend on same domain with /api
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const port = window.location.port ? `:${window.location.port}` : '';
+      return `${protocol}//${host}${port}/api`;
     }
   }
   
