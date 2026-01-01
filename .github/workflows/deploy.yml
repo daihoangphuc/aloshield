@@ -22,9 +22,14 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
 
+      - name: Prepare environment files
+        run: |
+          echo "${{ secrets.ENV_BE }}" > /tmp/backend.env
+          echo "${{ secrets.ENV_FE }}" > /tmp/frontend.env
+
       - name: Deploy to VPS
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'ENDSSH'
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash << 'ENDSSH'
             set -e
             
             APP_DIR="/opt/aloshield"
@@ -41,18 +46,17 @@ jobs:
               echo "📥 Cloning repository..."
               git clone https://github.com/${{ github.repository }}.git .
             fi
-            
-            # Create backend .env
-            echo "📝 Creating backend .env..."
-            cat > backend/.env << 'ENVEOF'
-          ${{ secrets.ENV_BE }}
-          ENVEOF
-
-            # Create frontend .env.local
-            echo "📝 Creating frontend .env.local..."
-            cat > frontend/.env.local << 'ENVEOF'
-          ${{ secrets.ENV_FE }}
-          ENVEOF
+          ENDSSH
+          
+          # Copy env files to server (ensure directories exist first)
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "mkdir -p /opt/aloshield/backend /opt/aloshield/frontend"
+          scp -i ~/.ssh/deploy_key /tmp/backend.env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/aloshield/backend/.env
+          scp -i ~/.ssh/deploy_key /tmp/frontend.env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/aloshield/frontend/.env
+          
+          # Build and start containers
+          ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash << 'ENDSSH'
+            set -e
+            cd /opt/aloshield
             
             # Build and run with Docker Compose
             echo "🐳 Building and starting containers..."
@@ -66,3 +70,6 @@ jobs:
             echo "✅ Deploy completed!"
             sudo docker compose ps
           ENDSSH
+          
+          # Cleanup temp files
+          rm -f /tmp/backend.env /tmp/frontend.env
