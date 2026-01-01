@@ -18,10 +18,23 @@ class SocketManager {
     const token = Cookies.get("accessToken");
     if (!token) return;
 
+    // Extract base URL and path
+    // If wsUrl is like "wss://api.phucndh.site/api", extract base URL and path
+    let baseWsUrl = config.wsUrl;
+    let socketPath = '/socket.io/';
+    
+    if (config.wsUrl.includes('/api')) {
+      // Split URL to get base and path
+      const urlObj = new URL(config.wsUrl);
+      baseWsUrl = `${urlObj.protocol}//${urlObj.host}`;
+      socketPath = '/api/socket.io/';
+    }
+
     // Main socket for messages
-    this.socket = io(config.wsUrl, {
+    this.socket = io(baseWsUrl, {
       auth: { token },
       transports: ["websocket", "polling"],
+      path: socketPath,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
@@ -30,10 +43,11 @@ class SocketManager {
 
     this.setupMainSocketListeners();
 
-    // Calls socket
-    this.callsSocket = io(`${config.wsUrl}/calls`, {
+    // Calls socket - connect to /calls namespace
+    this.callsSocket = io(`${baseWsUrl}/calls`, {
       auth: { token },
       transports: ["websocket", "polling"],
+      path: socketPath,  // Same path, different namespace
     });
 
     this.callsSocket.on("connect", () => {
