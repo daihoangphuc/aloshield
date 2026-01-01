@@ -19,6 +19,7 @@ interface AuthenticatedSocket extends Socket {
 }
 
 @WebSocketGateway({
+  path: '/api/socket.io/',
   cors: {
     origin: (origin, callback) => {
       const allowedOrigins = [
@@ -35,7 +36,7 @@ interface AuthenticatedSocket extends Socket {
     },
     credentials: true,
   },
-  transports: ['websocket', 'polling'],
+  transports: ['polling', 'websocket'], // Polling first for better Cloudflare compatibility
 })
 export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()

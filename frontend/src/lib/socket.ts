@@ -33,14 +33,17 @@ class SocketManager {
     console.log('🔌 Connecting sockets:', { baseWsUrl, socketPath });
 
     // Main socket for messages (default namespace)
+    // Use polling first for better Cloudflare Tunnel compatibility
     this.socket = io(baseWsUrl, {
       auth: { token },
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"], // Polling first, fallback to websocket
       path: socketPath,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 10,
+      upgrade: true, // Allow upgrade from polling to websocket
+      rememberUpgrade: true, // Remember successful upgrade
     });
 
     this.setupMainSocketListeners();
@@ -53,12 +56,14 @@ class SocketManager {
     console.log('📞 Connecting calls socket to:', callsUrl, 'with path:', socketPath);
     this.callsSocket = io(callsUrl, {
       auth: { token },
-      transports: ["websocket", "polling"],
+      transports: ["polling", "websocket"], // Polling first, fallback to websocket
       path: socketPath,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 10,
+      upgrade: true, // Allow upgrade from polling to websocket
+      rememberUpgrade: true, // Remember successful upgrade
     });
 
     this.callsSocket.on("connect", () => {
