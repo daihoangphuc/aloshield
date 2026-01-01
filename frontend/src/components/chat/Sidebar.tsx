@@ -181,8 +181,15 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
 
   return (
     <div className="flex flex-col w-full h-full bg-[var(--sidebar-bg)] overflow-hidden relative border-r border-[var(--border)]">
-      {/* 1. Header Section */}
-      <div className="p-4 md:p-5 flex-shrink-0 space-y-4 md:space-y-5">
+      {/* 1. Header Section - Safe area for mobile */}
+      <div 
+        className="p-4 md:p-5 flex-shrink-0 space-y-4 md:space-y-5"
+        style={{
+          paddingTop: 'max(1rem, calc(1rem + env(safe-area-inset-top, 0px)))',
+          paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
+          paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+        }}
+      >
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0 flex-1">
             <div className="relative group cursor-pointer flex-shrink-0">
@@ -247,7 +254,12 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
       </div>
 
       {/* 2. Scrollable Content */}
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-28">
+      <div 
+        className="flex-1 overflow-y-auto no-scrollbar"
+        style={{
+          paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))'
+        }}
+      >
         {/* Feature Under Development */}
         {activeTab !== "messages" && (
           <div className="flex flex-col items-center justify-center h-full px-6 py-20 text-center">
@@ -429,9 +441,16 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
         </div>
       )}
 
-      {/* 3. Bottom Navigation - Glassmorphism */}
-      <div className="absolute bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 w-[92%] md:w-[90%] flex-shrink-0 z-40">
-        <div className="glass-card rounded-[24px] md:rounded-3xl px-2 py-1.5 md:py-2 flex items-center justify-between shadow-2xl border-white/10">
+      {/* 3. Bottom Navigation - Glassmorphism - Fixed with safe area */}
+      <div 
+        className="fixed bottom-0 left-0 right-0 flex justify-center z-50 md:relative md:bottom-4 md:left-1/2 md:-translate-x-1/2 md:w-[90%]"
+        style={{
+          paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
+          paddingLeft: 'env(safe-area-inset-left, 0px)',
+          paddingRight: 'env(safe-area-inset-right, 0px)',
+        }}
+      >
+        <div className="glass-card rounded-[24px] md:rounded-3xl px-2 py-1.5 md:py-2 flex items-center justify-between shadow-2xl border-white/10 w-[92%] md:w-full max-w-[600px]">
           {[
             { id: "messages", icon: MessageSquare, label: "Chat" },
             { id: "calls", icon: Phone, label: "Gọi" },

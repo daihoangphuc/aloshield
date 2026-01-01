@@ -29,7 +29,8 @@ export function VideoCallWindow() {
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null); // For audio calls
+  const remoteVideoAudioRef = useRef<HTMLAudioElement>(null); // For video calls - separate audio element
   const [timer, setTimer] = useState("00:00");
 
   useEffect(() => {
@@ -44,11 +45,30 @@ export function VideoCallWindow() {
   useEffect(() => {
     console.log("🎥 Remote stream updated:", remoteStream);
     if (remoteStream) {
-      // For video calls, use video element
-      if (currentCall?.callType === "video" && remoteVideoRef.current) {
-        console.log("🎥 Setting remote video srcObject");
-        remoteVideoRef.current.srcObject = remoteStream;
-        remoteVideoRef.current.play().catch(e => console.error("Error playing remote video:", e));
+      // For video calls, use video element for video AND separate audio element for audio
+      if (currentCall?.callType === "video") {
+        if (remoteVideoRef.current) {
+          console.log("🎥 Setting remote video srcObject");
+          remoteVideoRef.current.srcObject = remoteStream;
+          remoteVideoRef.current.muted = false; // ✅ Ensure video audio is not muted
+          remoteVideoRef.current.play().catch(e => console.error("Error playing remote video:", e));
+        }
+        // ✅ Also use separate audio element for video calls to ensure audio plays
+        if (remoteVideoAudioRef.current) {
+          console.log("🔊 Setting remote video audio srcObject");
+          remoteVideoAudioRef.current.srcObject = remoteStream;
+          remoteVideoAudioRef.current.muted = false;
+          remoteVideoAudioRef.current.volume = 1.0;
+          remoteVideoAudioRef.current.play().catch(e => {
+            console.error("Error playing remote video audio:", e);
+            // Retry play if it fails (browser autoplay policy)
+            setTimeout(() => {
+              if (remoteVideoAudioRef.current) {
+                remoteVideoAudioRef.current.play().catch(err => console.error("Retry video audio play failed:", err));
+              }
+            }, 100);
+          });
+        }
       }
       // For audio calls, use audio element
       if (currentCall?.callType === "audio" && remoteAudioRef.current) {
@@ -67,9 +87,12 @@ export function VideoCallWindow() {
         });
       }
     } else {
-      // Clear audio element when stream is removed
+      // Clear audio elements when stream is removed
       if (remoteAudioRef.current && currentCall?.callType === "audio") {
         remoteAudioRef.current.srcObject = null;
+      }
+      if (remoteVideoAudioRef.current && currentCall?.callType === "video") {
+        remoteVideoAudioRef.current.srcObject = null;
       }
     }
   }, [remoteStream, currentCall?.callType]);
@@ -98,6 +121,14 @@ export function VideoCallWindow() {
         muted={false}
         className="hidden" 
       />
+      {/* Hidden audio element for video calls - separate audio track */}
+      <audio 
+        ref={remoteVideoAudioRef} 
+        autoPlay 
+        playsInline 
+        muted={false}
+        className="hidden" 
+      />
       {/* REMOTE VIDEO (FULL SCREEN) */}
       <div className="absolute inset-0 overflow-hidden">
         {remoteStream && currentCall.callType === "video" ? (
@@ -105,6 +136,7 @@ export function VideoCallWindow() {
             ref={remoteVideoRef}
             autoPlay
             playsInline
+            muted={false}
             className="w-full h-full object-cover"
           />
         ) : (

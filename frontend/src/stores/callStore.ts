@@ -246,6 +246,13 @@ export const useCallStore = create<CallState>((set, get) => ({
       console.log("🎥 Remote track received:", event.track.kind, event.streams[0]);
       console.log("🎥 Track enabled:", event.track.enabled, "Track readyState:", event.track.readyState);
       console.log("🎥 Stream tracks:", event.streams[0]?.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })));
+      
+      // ✅ Ensure audio tracks are enabled
+      if (event.track.kind === "audio") {
+        event.track.enabled = true;
+        console.log("🔊 Audio track enabled:", event.track.id);
+      }
+      
       set({ remoteStream: event.streams[0] });
     };
 

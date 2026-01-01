@@ -882,13 +882,15 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         </div>
       )}
       
-      {/* Header */}
+      {/* Header - Fixed with safe area for mobile */}
       <header 
-        className={`flex items-center justify-between px-3 md:px-6 border-b border-[var(--border)] bg-[var(--chat-bg)]/80 backdrop-blur-xl flex-shrink-0 z-10 ${isMobile ? 'sticky top-0' : ''}`}
+        className={`flex items-center justify-between px-3 md:px-6 border-b border-[var(--border)] bg-[var(--chat-bg)]/80 backdrop-blur-xl flex-shrink-0 z-10 ${isMobile ? 'fixed top-0 left-0 right-0' : ''}`}
         style={isMobile ? { 
           top: 'env(safe-area-inset-top, 0px)',
           paddingTop: `max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px)))`,
           paddingBottom: '0.75rem',
+          paddingLeft: 'calc(0.75rem + env(safe-area-inset-left, 0px))',
+          paddingRight: 'calc(0.75rem + env(safe-area-inset-right, 0px))',
           minHeight: '70px',
           height: 'auto'
         } : {
@@ -981,7 +983,12 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       {/* Messages Area */}
       <div 
         ref={messagesContainerRef}
-        className="flex-1 min-h-0 overflow-y-auto px-3 md:px-4 pt-4 space-y-3 no-scrollbar"
+        className="flex-1 min-h-0 overflow-y-auto px-3 md:px-4 space-y-3 no-scrollbar"
+        style={isMobile ? {
+          paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px) + 70px)'
+        } : {
+          paddingTop: '1rem'
+        }}
       >
         {/* E2EE Notice */}
         <div className="flex justify-center mb-4 md:mb-6">
