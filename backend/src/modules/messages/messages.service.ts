@@ -42,6 +42,7 @@ export class MessagesService {
       session_version: dto.sessionVersion,
       ratchet_step: dto.ratchetStep,
       reply_to_message_id: dto.replyToMessageId,
+      status: 'sent', // Mặc định là sent
     });
 
     // Handle attachments if any
@@ -120,6 +121,21 @@ export class MessagesService {
   async markAsDelivered(messageId: string, userId: string) {
     const supabase = this.supabaseService.getAdminClient();
 
+    // 1. Cập nhật record trong table messages (nếu chưa read)
+    const { data: currentMsg } = await supabase
+      .from('messages')
+      .select('status')
+      .eq('id', messageId)
+      .single();
+
+    if (currentMsg && currentMsg.status !== 'read') {
+      await supabase
+        .from('messages')
+        .update({ status: 'delivered' })
+        .eq('id', messageId);
+    }
+
+    // 2. Upsert vào message_receipts
     const { error } = await supabase
       .from('message_receipts')
       .upsert({
@@ -137,6 +153,13 @@ export class MessagesService {
   async markAsRead(messageId: string, userId: string) {
     const supabase = this.supabaseService.getAdminClient();
 
+    // 1. Cập nhật record trong table messages
+    await supabase
+      .from('messages')
+      .update({ status: 'read' })
+      .eq('id', messageId);
+
+    // 2. Upsert vào message_receipts
     const { error } = await supabase
       .from('message_receipts')
       .upsert({

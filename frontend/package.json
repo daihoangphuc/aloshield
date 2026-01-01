@@ -4,8 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "next dev",
     "build": "next build",
+    "build:prod": "cross-env NODE_ENV=production next build",
     "start": "next start",
+    "start:prod": "cross-env NODE_ENV=production next start",
     "lint": "eslint"
   },
   "dependencies": {
@@ -29,6 +32,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
+    "cross-env": "^10.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.1",
     "tailwindcss": "^4",

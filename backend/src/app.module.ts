@@ -10,12 +10,33 @@ import { CallsModule } from './modules/calls/calls.module';
 import { KeysModule } from './modules/keys/keys.module';
 import { SharedModule } from './shared/shared.module';
 
+/**
+ * Environment file loading strategy:
+ * - Local development: .env.local (prioritized) -> .env (fallback)
+ * - Production: .env only
+ * 
+ * Usage:
+ * - npm run start:dev  -> loads .env.local first
+ * - npm run start:prod -> loads .env only
+ */
+const getEnvFilePath = (): string[] => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  if (isProduction) {
+    // Production: only use .env
+    return ['.env'];
+  }
+  
+  // Development: .env.local first, then .env as fallback
+  return ['.env.local', '.env'];
+};
+
 @Module({
   imports: [
     // Configuration
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: getEnvFilePath(),
     }),
 
     // Rate limiting

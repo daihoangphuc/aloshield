@@ -128,6 +128,10 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
       // Get caller info
       const caller = await this.usersService.findById(client.userId);
 
+      // Check if recipient is online
+      const recipientSocketId = this.userSockets.get(data.recipientId);
+      console.log(`[Calls] Initiating call to ${data.recipientId}, socket: ${recipientSocketId || 'NOT CONNECTED'}`);
+      
       // Notify recipient
       this.server.to(`user:${data.recipientId}`).emit('call:incoming', {
         callId: call.id,
@@ -137,6 +141,8 @@ export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         callType: data.callType,
         conversationId: data.conversationId,
       });
+      
+      console.log(`[Calls] Emitted call:incoming to user:${data.recipientId}`);
 
       // Update call status
       await this.callsService.updateCallStatus(call.id, 'ringing');

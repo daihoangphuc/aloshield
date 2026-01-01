@@ -19,6 +19,12 @@ interface CurrentCall {
   startTime?: Date;
 }
 
+interface PendingOffer {
+  callId: string;
+  callerId: string;
+  offer: RTCSessionDescriptionInit;
+}
+
 interface CallState {
   currentCall: CurrentCall | null;
   incomingCall: IncomingCall | null;
@@ -29,6 +35,8 @@ interface CallState {
   isVideoOff: boolean;
   callDuration: number;
   iceServers: RTCIceServer[];
+  pendingIceCandidates: RTCIceCandidateInit[];
+  pendingOffer: PendingOffer | null;
 
   // Actions
   setIncomingCall: (call: IncomingCall | null) => void;
@@ -69,10 +77,13 @@ export const useCallStore = create<CallState>((set, get) => ({
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
   ],
+  pendingIceCandidates: [],
+  pendingOffer: null,
 
   setIncomingCall: (call) => set({ incomingCall: call }),
 
   initiateCall: (callId, recipientId, recipientName, recipientAvatar, callType) => {
+    console.log("📞 Initiating call:", { callId, recipientId, recipientName, callType });
     set({
       currentCall: {
         callId,
@@ -84,17 +95,16 @@ export const useCallStore = create<CallState>((set, get) => ({
       },
       incomingCall: null,
     });
+    console.log("📞 Current call set:", get().currentCall);
   },
 
   acceptCall: async () => {
     const { incomingCall, initializePeerConnection, iceServers } = get();
     if (!incomingCall) return;
 
+    console.log("📞 Accepting call:", incomingCall);
     try {
-      // Accept call via socket
       const response = await socketManager.acceptCall(incomingCall.callId) as { iceServers?: RTCIceServer[] };
-
-      // Use TURN servers from response if available
       const servers = response.iceServers || iceServers;
 
       set({
@@ -109,10 +119,10 @@ export const useCallStore = create<CallState>((set, get) => ({
         incomingCall: null,
         iceServers: servers,
       });
+      console.log("📞 Current call set after accept:", get().currentCall);
 
       await initializePeerConnection(servers);
-    } catch (error) {
-      console.error("Failed to accept call:", error);
+    } catch {
       set({ incomingCall: null });
     }
   },
@@ -142,7 +152,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     const { localStream, isMuted } = get();
     if (localStream) {
       localStream.getAudioTracks().forEach((track) => {
-        track.enabled = isMuted; // Toggle
+        track.enabled = isMuted;
       });
     }
     set({ isMuted: !isMuted });
@@ -152,7 +162,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     const { localStream, isVideoOff } = get();
     if (localStream) {
       localStream.getVideoTracks().forEach((track) => {
-        track.enabled = isVideoOff; // Toggle
+        track.enabled = isVideoOff;
       });
     }
     set({ isVideoOff: !isVideoOff });
@@ -162,63 +172,65 @@ export const useCallStore = create<CallState>((set, get) => ({
   setRemoteStream: (stream) => set({ remoteStream: stream }),
   setCallDuration: (duration) => set({ callDuration: duration }),
 
+  // Xử lý offer - Queue nếu chưa có peer connection
   handleOffer: async (data) => {
-    const { peerConnection, createAnswer, currentCall } = get();
+    const { peerConnection, currentCall } = get();
+    
     if (!peerConnection) {
-      console.error("No peer connection for offer");
+      // Queue offer để xử lý sau khi accept call
+      set({ pendingOffer: data });
       return;
     }
 
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-      const answer = await createAnswer();
-
+      const answer = await get().createAnswer();
       if (currentCall) {
         socketManager.sendAnswer(data.callId, data.callerId, answer);
       }
-    } catch (error) {
-      console.error("Error handling offer:", error);
+    } catch {
+      // Silent fail - WebRTC errors are expected during negotiation
     }
   },
 
+  // Xử lý answer
   handleAnswer: async (data) => {
     const { peerConnection } = get();
-    if (!peerConnection) {
-      console.error("No peer connection for answer");
-      return;
-    }
+    if (!peerConnection) return;
 
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-    } catch (error) {
-      console.error("Error handling answer:", error);
+    } catch {
+      // Silent fail
     }
   },
 
+  // Xử lý ICE candidate - Queue nếu chưa có peer connection
   handleIceCandidate: async (data) => {
-    const { peerConnection } = get();
+    const { peerConnection, pendingIceCandidates } = get();
+    
     if (!peerConnection) {
-      console.error("No peer connection for ICE candidate");
+      // Queue candidate để xử lý sau khi có peer connection
+      set({ pendingIceCandidates: [...pendingIceCandidates, data.candidate] });
       return;
     }
 
     try {
       await peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
-    } catch (error) {
-      console.error("Error adding ICE candidate:", error);
+    } catch {
+      // Silent fail - ICE candidate errors are common and expected
     }
   },
 
   initializePeerConnection: async (iceServers) => {
     const { currentCall } = get();
 
-    // Create peer connection
     const pc = new RTCPeerConnection({
       iceServers,
-      iceTransportPolicy: "all", // Use 'relay' for TURN only
+      iceTransportPolicy: "all",
     });
 
-    // Handle ICE candidates
+    // ICE candidate handler
     pc.onicecandidate = (event) => {
       if (event.candidate && currentCall) {
         socketManager.sendIceCandidate(
@@ -229,15 +241,14 @@ export const useCallStore = create<CallState>((set, get) => ({
       }
     };
 
-    // Handle remote stream
+    // Remote stream handler
     pc.ontrack = (event) => {
-      console.log("Remote track received:", event.streams[0]);
+      console.log("🎥 Remote track received:", event.track.kind, event.streams[0]);
       set({ remoteStream: event.streams[0] });
     };
 
-    // Handle connection state changes
+    // Connection state handler
     pc.oniceconnectionstatechange = () => {
-      console.log("ICE connection state:", pc.iceConnectionState);
       if (pc.iceConnectionState === "connected") {
         set((state) => ({
           currentCall: state.currentCall
@@ -260,15 +271,45 @@ export const useCallStore = create<CallState>((set, get) => ({
         video: callType === "video" ? { width: 1280, height: 720, frameRate: 30 } : false,
       });
 
-      // Add tracks to peer connection
       stream.getTracks().forEach((track) => {
         pc.addTrack(track, stream);
       });
 
+      console.log("🎥 Local stream obtained:", stream, "Tracks:", stream.getTracks().map(t => t.kind));
       set({ localStream: stream, peerConnection: pc });
-    } catch (error) {
-      console.error("Failed to get local media:", error);
-      throw error;
+
+      // Process pending offer (when receiving call)
+      const pendingOffer = get().pendingOffer;
+      if (pendingOffer) {
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(pendingOffer.offer));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          
+          const updatedCall = get().currentCall;
+          if (updatedCall) {
+            socketManager.sendAnswer(pendingOffer.callId, pendingOffer.callerId, answer);
+          }
+          set({ pendingOffer: null });
+        } catch {
+          // Silent fail
+        }
+      }
+
+      // Process pending ICE candidates
+      const pendingCandidates = get().pendingIceCandidates;
+      if (pendingCandidates.length > 0) {
+        for (const candidate of pendingCandidates) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(candidate));
+          } catch {
+            // Silent fail
+          }
+        }
+        set({ pendingIceCandidates: [] });
+      }
+    } catch {
+      throw new Error("Failed to get media devices");
     }
   },
 
@@ -301,12 +342,10 @@ export const useCallStore = create<CallState>((set, get) => ({
   cleanup: () => {
     const { localStream, peerConnection } = get();
 
-    // Stop all tracks
     if (localStream) {
       localStream.getTracks().forEach((track) => track.stop());
     }
 
-    // Close peer connection
     if (peerConnection) {
       peerConnection.close();
     }
@@ -317,6 +356,9 @@ export const useCallStore = create<CallState>((set, get) => ({
       peerConnection: null,
       isMuted: false,
       isVideoOff: false,
+      pendingIceCandidates: [],
+      pendingOffer: null,
     });
   },
 }));
+// Force rebuild

@@ -6,12 +6,18 @@ dist/
 .next/
 out/
 
-# Environment files
+# Environment files (keep .example files)
 .env
 .env.local
+.env.production
 .env.*.local
 backend/.env
+backend/.env.local
+backend/.env.production
+frontend/.env
 frontend/.env.local
+frontend/.env.production
+!*.example
 
 # IDE
 .idea/

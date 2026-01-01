@@ -12,6 +12,7 @@ interface ConversationsState {
   setActiveConversation: (id: string | null) => void;
   updateLastMessage: (conversationId: string, message: Message) => void;
   updateUnreadCount: (conversationId: string, count: number) => void;
+  updateMessageStatus: (messageId: string, status: "sent" | "delivered" | "read") => void;
   setTyping: (conversationId: string, userId: string, isTyping: boolean) => void;
   updateUserPresence: (userId: string, isOnline: boolean) => void;
   setLoading: (loading: boolean) => void;
@@ -55,6 +56,22 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
       conversations: state.conversations.map((conv) =>
         conv.id === conversationId ? { ...conv, unread_count: count } : conv
       ),
+    })),
+
+  updateMessageStatus: (messageId, status) =>
+    set((state) => ({
+      conversations: state.conversations.map((conv) => {
+        if (conv.last_message?.id === messageId) {
+          return {
+            ...conv,
+            last_message: {
+              ...conv.last_message,
+              status,
+            },
+          };
+        }
+        return conv;
+      }),
     })),
 
   setTyping: (conversationId, userId, isTyping) =>

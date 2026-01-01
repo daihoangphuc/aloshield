@@ -17,6 +17,10 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
+        hostname: "*.googleusercontent.com",
+      },
+      {
+        protocol: "https",
         hostname: "*.supabase.co",
       },
       {
@@ -24,6 +28,8 @@ const nextConfig: NextConfig = {
         hostname: "*.r2.cloudflarestorage.com",
       },
     ],
+    // Allow all external images (for avatar URLs)
+    unoptimized: false,
   },
 };
 

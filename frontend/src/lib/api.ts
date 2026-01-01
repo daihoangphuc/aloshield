@@ -155,6 +155,7 @@ export const conversationsApi = {
   create: (participantId: string) =>
     api.post<Conversation>("/conversations", { participantId }),
   markAsRead: (id: string) => api.post(`/conversations/${id}/read`),
+  delete: (id: string) => api.delete(`/conversations/${id}`),
 };
 
 // Messages API
@@ -263,6 +264,14 @@ export interface Message {
   deleted_at?: string;
   // Decrypted content (client-side only)
   content?: string;
+  // Message delivery status
+  status?: "sent" | "delivered" | "read";
+  // Reactions
+  reactions?: Array<{
+    emoji: string;
+    users: { id: string; username: string; display_name: string }[];
+    count: number;
+  }>;
 }
 
 export interface Attachment {

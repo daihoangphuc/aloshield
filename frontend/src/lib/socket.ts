@@ -35,6 +35,18 @@ class SocketManager {
       transports: ["websocket", "polling"],
     });
 
+    this.callsSocket.on("connect", () => {
+      console.log("📞 Calls socket connected, id:", this.callsSocket?.id);
+    });
+
+    this.callsSocket.on("disconnect", () => {
+      console.log("📞 Calls socket disconnected");
+    });
+
+    this.callsSocket.on("connect_error", (error) => {
+      console.error("📞 Calls socket connection error:", error);
+    });
+
     this.setupCallsSocketListeners();
 
     // E2EE initialization disabled for now
@@ -79,28 +91,32 @@ class SocketManager {
         // Use encrypted_content directly as content (E2EE disabled for now)
         const content = data.encrypted_content || data.encryptedContent || data.content;
 
-        useMessagesStore.getState().addMessage({
+        // New messages start with "sent" status
+        const messageWithStatus = {
           ...data,
           content: content,
-        });
-        useConversationsStore.getState().updateLastMessage(
-          conversationId,
-          {
-            ...data,
-            content: content,
-          }
-        );
+          status: data.status || "sent",
+        };
+
+        useMessagesStore.getState().addMessage(messageWithStatus);
+        useConversationsStore.getState().updateLastMessage(conversationId, messageWithStatus);
       } catch (error) {
         console.error("Error processing new message:", error);
       }
     });
 
     this.socket.on("message:delivered", (data) => {
+      console.log("📬 Message delivered:", data.messageId);
       useMessagesStore.getState().updateMessageStatus(data.messageId, "delivered");
+      // Also update conversation's last_message status
+      useConversationsStore.getState().updateMessageStatus(data.messageId, "delivered");
     });
 
     this.socket.on("message:read", (data) => {
+      console.log("📖 Message read:", data.messageId);
       useMessagesStore.getState().updateMessageStatus(data.messageId, "read");
+      // Also update conversation's last_message status
+      useConversationsStore.getState().updateMessageStatus(data.messageId, "read");
     });
 
     // Message deleted
@@ -157,8 +173,10 @@ class SocketManager {
     if (!this.callsSocket) return;
 
     this.callsSocket.on("call:incoming", (data) => {
-      console.log("Incoming call:", data);
+      console.log("📞 Incoming call received:", data);
+      console.log("📞 Setting incoming call in store...");
       useCallStore.getState().setIncomingCall(data);
+      console.log("📞 Incoming call set:", useCallStore.getState().incomingCall);
     });
 
     this.callsSocket.on("call:accepted", (data) => {

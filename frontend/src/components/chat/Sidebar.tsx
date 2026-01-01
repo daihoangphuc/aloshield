@@ -1,13 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useConversationsStore } from "@/stores/conversationsStore";
-import { conversationsApi, usersApi, User } from "@/lib/api";
+import { conversationsApi, usersApi, User, Conversation } from "@/lib/api";
 import {
   Search,
   Settings,
-  EyeOff,
   MessageSquare,
   Phone,
   Users,
@@ -16,6 +15,7 @@ import {
   Loader2,
   PenSquare,
   LogOut,
+  Undo2,
 } from "lucide-react";
 import { ConversationItem } from "./ConversationItem";
 
@@ -23,9 +23,14 @@ interface SidebarProps {
   onConversationSelect: () => void;
 }
 
+interface DeletedConversation {
+  conversation: Conversation;
+  timeoutId: NodeJS.Timeout;
+}
+
 export function Sidebar({ onConversationSelect }: SidebarProps) {
   const { user, logout } = useAuthStore();
-  const { conversations, activeConversationId, setActiveConversation, addConversation } = useConversationsStore();
+  const { conversations, activeConversationId, setActiveConversation, addConversation, setConversations } = useConversationsStore();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
@@ -33,6 +38,10 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<"messages" | "calls" | "contacts" | "profile">("messages");
   const [contacts, setContacts] = useState<User[]>([]);
   const [isStartingChat, setIsStartingChat] = useState(false);
+  
+  // Undo delete state
+  const [deletedConversation, setDeletedConversation] = useState<DeletedConversation | null>(null);
+  const [undoCountdown, setUndoCountdown] = useState(5);
 
   // Load contacts on mount
   useEffect(() => {
@@ -95,6 +104,75 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
     window.location.href = "/login";
   };
 
+  // Handle delete conversation with undo
+  const handleDeleteConversation = useCallback((conversationId: string) => {
+    const convToDelete = conversations.find(c => c.id === conversationId);
+    if (!convToDelete) return;
+
+    // Clear previous undo if exists
+    if (deletedConversation) {
+      clearTimeout(deletedConversation.timeoutId);
+      // Actually delete the previous one since user started new delete
+      conversationsApi.delete(deletedConversation.conversation.id).catch(console.error);
+    }
+
+    // Remove from UI immediately
+    setConversations(conversations.filter(c => c.id !== conversationId));
+    
+    // If this was the active conversation, clear it
+    if (activeConversationId === conversationId) {
+      setActiveConversation(null);
+    }
+
+    // Start countdown
+    setUndoCountdown(5);
+    
+    // Set timeout to actually delete
+    const timeoutId = setTimeout(async () => {
+      try {
+        await conversationsApi.delete(conversationId);
+        console.log("Conversation deleted:", conversationId);
+      } catch (error) {
+        console.error("Failed to delete conversation:", error);
+      }
+      setDeletedConversation(null);
+    }, 5000);
+
+    setDeletedConversation({ conversation: convToDelete, timeoutId });
+  }, [conversations, deletedConversation, activeConversationId, setConversations, setActiveConversation]);
+
+  // Handle undo delete
+  const handleUndoDelete = useCallback(() => {
+    if (!deletedConversation) return;
+    
+    // Clear timeout
+    clearTimeout(deletedConversation.timeoutId);
+    
+    // Restore conversation
+    addConversation(deletedConversation.conversation);
+    
+    // Clear state
+    setDeletedConversation(null);
+    setUndoCountdown(5);
+  }, [deletedConversation, addConversation]);
+
+  // Countdown effect
+  useEffect(() => {
+    if (!deletedConversation) return;
+    
+    const interval = setInterval(() => {
+      setUndoCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [deletedConversation]);
+
   // Get online users from conversations participants
   const onlineUsers = conversations
     .flatMap(conv => conv.participants)
@@ -104,140 +182,165 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
     .slice(0, 6);
 
   return (
-    <div className="flex flex-col w-full h-full bg-[#0b141a] overflow-hidden relative">
+    <div className="flex flex-col w-full h-full bg-[var(--sidebar-bg)] overflow-hidden relative border-r border-[var(--border)]">
       {/* 1. Header Section */}
-      <div className="p-4 flex-shrink-0">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <div className="w-10 h-10 rounded-full bg-[#202c33] overflow-hidden">
-                {user?.avatar_url ? (
-                  <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 text-white font-bold text-sm">
-                    {user?.display_name?.[0] || user?.username?.[0] || "?"}
-                  </div>
-                )}
+      <div className="p-5 flex-shrink-0 space-y-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="relative group cursor-pointer">
+              <div className="avatar-ring w-12 h-12 transition-transform duration-300 group-hover:scale-105">
+                <div className="w-full h-full rounded-full bg-[var(--sidebar-bg)] overflow-hidden">
+                  {user?.avatar_url ? (
+                    <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-white font-black text-lg bg-gradient-to-br from-[var(--primary)] to-[var(--accent)]">
+                      {user?.display_name?.[0] || user?.username?.[0] || "?"}
+                    </div>
+                  )}
+                </div>
               </div>
-              <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-[#0b141a] rounded-full" />
+              <div className="online-indicator absolute -bottom-0.5 -right-0.5" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">Đoạn chat</h1>
-              <p className="text-xs text-[#8e9196]">{user?.display_name || user?.username}</p>
+              <h1 className="text-xl font-black text-white tracking-tight">Đoạn chat</h1>
+              <div className="flex items-center gap-1.5">
+                <div className="relative">
+                  <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
+                  <div className="absolute inset-0 rounded-full bg-[var(--success)] animate-ping opacity-75" />
+                </div>
+                <p className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Trực tuyến</p>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button className="p-2.5 bg-white/5 rounded-xl hover:bg-white/10 transition-all text-[var(--text-secondary)] hover:text-white">
+              <Settings size={20} />
+            </button>
             <button 
               onClick={handleLogout}
-              className="p-2.5 bg-[#202c33] rounded-full hover:bg-red-500/20 hover:text-red-400 transition-colors text-[#8e9196]"
+              className="p-2.5 bg-[var(--danger)]/10 rounded-xl hover:bg-[var(--danger)]/20 transition-all text-[var(--danger)]/70 hover:text-[var(--danger)]"
               title="Đăng xuất"
             >
-              <LogOut size={18} />
-            </button>
-            <button className="p-2.5 bg-[#202c33] rounded-full hover:bg-[#2a3942] transition-colors">
-              <Settings size={18} className="text-[#8e9196]" />
+              <LogOut size={20} />
             </button>
           </div>
         </div>
 
         {/* Search Bar */}
-        <div className="relative flex items-center bg-[#202c33] rounded-2xl px-3 py-2.5">
-          <Search size={18} className="text-[#8e9196] mr-2 flex-shrink-0" />
+        <div className="relative group">
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+            <Search size={18} className="text-[var(--text-muted)] group-focus-within:text-[var(--primary)] transition-colors" />
+          </div>
           <input
             type="text"
-            placeholder="Tìm kiếm người dùng..."
-            className="bg-transparent border-none outline-none text-white text-[15px] w-full placeholder:text-[#8e9196]"
+            placeholder="Tìm kiếm bạn bè..."
+            className="input-field pl-12 pr-12"
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
           />
           {searchQuery && (
-            <button onClick={clearSearch} className="p-1 hover:bg-[#374248] rounded-full transition-colors">
-              <X size={16} className="text-[#8e9196]" />
+            <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-white/5 rounded-lg transition-colors">
+              <X size={16} className="text-[var(--text-muted)]" />
             </button>
           )}
-          {isSearching && <Loader2 size={16} className="text-[#0084ff] animate-spin ml-2" />}
+          {isSearching && (
+            <div className="absolute right-12 top-1/2 -translate-y-1/2">
+              <Loader2 size={16} className="text-[var(--primary)] animate-spin" />
+            </div>
+          )}
         </div>
       </div>
 
       {/* 2. Scrollable Content */}
-      <div className="flex-1 overflow-y-auto no-scrollbar">
+      <div className="flex-1 overflow-y-auto no-scrollbar pb-28">
         {/* Search Results */}
         {searchQuery && (
-          <div className="px-2">
-            <p className="px-2 text-[13px] font-bold text-[#8e9196] uppercase mb-2">Kết quả tìm kiếm</p>
+          <div className="px-3 animate-in">
+            <p className="px-3 text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] mb-4">Kết quả tìm kiếm</p>
             {isSearching ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 size={24} className="text-[#0084ff] animate-spin" />
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Loader2 size={32} className="text-[var(--primary)] animate-spin" />
+                <p className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-widest">Đang tìm kiếm...</p>
               </div>
             ) : searchResults.length > 0 ? (
               <div className="space-y-1">
-                {searchResults.map((u) => (
+                {searchResults.map((u, index) => (
                   <button
                     key={u.id}
                     onClick={() => handleSelectUser(u)}
                     disabled={isStartingChat}
-                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-[#202c33] transition-colors disabled:opacity-50"
+                    className="w-full flex items-center gap-4 p-4 rounded-2xl hover:bg-white/5 transition-all disabled:opacity-50 group stagger-item"
+                    style={{ animationDelay: `${index * 50}ms` }}
                   >
                     <div className="relative flex-shrink-0">
-                      <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-br from-blue-500 to-purple-600">
-                        {u.avatar_url ? (
-                          <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-white font-bold">
-                            {u.display_name?.[0] || u.username?.[0]}
-                          </div>
-                        )}
+                      <div className="avatar-ring w-12 h-12">
+                        <div className="w-full h-full rounded-full bg-[var(--sidebar-bg)] flex items-center justify-center overflow-hidden">
+                          {u.avatar_url ? (
+                            <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-white font-black text-lg bg-gradient-to-br from-[var(--primary)] to-[var(--accent)]">
+                              {u.display_name?.[0] || u.username?.[0]}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {u.is_online && (
-                        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 border-2 border-[#0b141a] rounded-full" />
-                      )}
+                      {u.is_online && <div className="online-indicator absolute -bottom-0.5 -right-0.5" />}
                     </div>
                     <div className="flex-1 min-w-0 text-left">
-                      <p className="font-semibold text-white truncate">{u.display_name || u.username}</p>
-                      <p className="text-sm text-[#8e9196] truncate">@{u.username}</p>
+                      <p className="font-bold text-white truncate group-hover:text-[var(--primary)] transition-colors">
+                        {u.display_name || u.username}
+                      </p>
+                      <p className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-wider truncate">@{u.username}</p>
                     </div>
                     {isStartingChat ? (
-                      <Loader2 size={20} className="text-[#0084ff] animate-spin" />
+                      <Loader2 size={20} className="text-[var(--primary)] animate-spin" />
                     ) : (
-                      <MessageSquare size={20} className="text-[#0084ff]" />
+                      <div className="w-10 h-10 rounded-full bg-[var(--primary)]/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <MessageSquare size={18} className="text-[var(--primary)]" />
+                      </div>
                     )}
                   </button>
                 ))}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <Search size={32} className="text-[#8e9196] mb-2" />
-                <p className="text-[#8e9196]">Không tìm thấy người dùng</p>
-                <p className="text-xs text-[#8e9196] mt-1">Thử tìm với tên khác</p>
+              <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+                <div className="w-16 h-16 bg-white/5 rounded-3xl flex items-center justify-center mb-4 border border-[var(--border)]">
+                  <Search size={32} className="text-[var(--text-muted)]" />
+                </div>
+                <p className="text-white font-bold mb-1">Không tìm thấy ai</p>
+                <p className="text-xs font-medium text-[var(--text-muted)]">Hãy thử tìm bằng tên người dùng chính xác hơn.</p>
               </div>
             )}
           </div>
         )}
 
-        {/* ĐANG HOẠT ĐỘNG - Only show when not searching */}
+        {/* Active Users - Horizontal Scroll */}
         {!searchQuery && onlineUsers.length > 0 && (
-          <div className="py-2">
-            <p className="px-4 text-[13px] font-bold text-[#8e9196] uppercase mb-3">Đang hoạt động</p>
-            <div className="flex gap-4 overflow-x-auto px-4 no-scrollbar">
-              {onlineUsers.map((u) => u && (
+          <div className="py-4 border-b border-[var(--border)]">
+            <p className="px-5 text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] mb-4">Đang hoạt động</p>
+            <div className="flex gap-5 overflow-x-auto px-5 no-scrollbar">
+              {onlineUsers.map((u, index) => u && (
                 <button
                   key={u.id}
                   onClick={() => handleSelectUser(u)}
-                  className="flex flex-col items-center gap-1.5 flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                  className="flex flex-col items-center gap-2.5 flex-shrink-0 group stagger-item"
+                  style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <div className="relative">
-                    <div className="w-14 h-14 rounded-full overflow-hidden border-2 border-[#222d34]">
-                      {u.avatar_url ? (
-                        <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 text-white font-bold">
-                          {u.display_name?.[0] || u.username?.[0]}
-                        </div>
-                      )}
+                    <div className="avatar-ring-online w-[60px] h-[60px] transition-transform group-hover:scale-105">
+                      <div className="w-full h-full rounded-full bg-[var(--sidebar-bg)] flex items-center justify-center overflow-hidden">
+                        {u.avatar_url ? (
+                          <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-white font-black text-xl bg-gradient-to-br from-[var(--success)] to-[var(--primary)]">
+                            {u.display_name?.[0] || u.username?.[0]}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div className="absolute bottom-0 right-1 w-3.5 h-3.5 bg-green-500 border-2 border-[#0b141a] rounded-full" />
+                    <div className="online-indicator absolute -bottom-0.5 -right-0.5 w-4 h-4" />
                   </div>
-                  <span className="text-[12px] text-white font-medium truncate max-w-[60px]">
+                  <span className="text-[11px] font-bold text-white truncate max-w-[64px] tracking-tight">
                     {u.display_name?.split(' ')[0] || u.username}
                   </span>
                 </button>
@@ -246,33 +349,43 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
           </div>
         )}
 
-        {/* GẦN ĐÂY - Conversations List */}
+        {/* Recent Conversations */}
         {!searchQuery && (
-          <div className="mt-4">
-            <p className="px-4 text-[13px] font-bold text-[#8e9196] uppercase mb-2">
-              Gần đây {conversations.length > 0 && `(${conversations.length})`}
-            </p>
-            <div className="px-2 space-y-0.5">
+          <div className="mt-6">
+            <div className="flex items-center justify-between px-5 mb-4">
+              <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em]">
+                Gần đây {conversations.length > 0 && `(${conversations.length})`}
+              </p>
+              <button className="p-1 text-[var(--text-muted)] hover:text-white transition-colors">
+                <PenSquare size={16} />
+              </button>
+            </div>
+            
+            <div className="px-2 space-y-1">
               {conversations.length > 0 ? (
-                conversations.map((conv) => (
-                  <ConversationItem
-                    key={conv.id}
-                    conversation={conv}
-                    isActive={conv.id === activeConversationId}
-                    onClick={() => {
-                      setActiveConversation(conv.id);
-                      onConversationSelect();
-                    }}
-                    currentUserId={user?.id || ""}
-                  />
+                conversations.map((conv, index) => (
+                  <div key={conv.id} className="stagger-item" style={{ animationDelay: `${index * 30}ms` }}>
+                    <ConversationItem
+                      conversation={conv}
+                      isActive={conv.id === activeConversationId}
+                      onClick={() => {
+                        setActiveConversation(conv.id);
+                        onConversationSelect();
+                      }}
+                      currentUserId={user?.id || ""}
+                      onDelete={handleDeleteConversation}
+                    />
+                  </div>
                 ))
               ) : (
-                <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-                  <div className="w-16 h-16 bg-[#202c33] rounded-full flex items-center justify-center mb-4">
-                    <MessageSquare size={32} className="text-[#8e9196]" />
+                <div className="flex flex-col items-center justify-center py-20 px-8 text-center">
+                  <div className="w-20 h-20 bg-white/5 rounded-3xl flex items-center justify-center mb-6 border border-[var(--border)]">
+                    <MessageSquare size={36} className="text-[var(--text-muted)]" />
                   </div>
-                  <p className="text-white font-medium">Chưa có cuộc trò chuyện nào</p>
-                  <p className="text-[13px] text-[#8e9196] mt-1">Tìm kiếm bạn bè để bắt đầu chat</p>
+                  <h3 className="text-white font-black mb-2">Bắt đầu trò chuyện</h3>
+                  <p className="text-[13px] font-medium text-[var(--text-muted)] leading-relaxed">
+                    Mọi tin nhắn của bạn sẽ được mã hóa an toàn tại đây.
+                  </p>
                 </div>
               )}
             </div>
@@ -280,46 +393,67 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
         )}
       </div>
 
-      {/* Floating Action Button (FAB) - New Chat */}
-      <button 
-        onClick={() => document.querySelector<HTMLInputElement>('input[placeholder*="Tìm kiếm"]')?.focus()}
-        className="absolute bottom-24 right-4 w-14 h-14 bg-[#0084ff] rounded-full flex items-center justify-center shadow-lg shadow-blue-500/30 hover:bg-[#0073e6] transition-all active:scale-95 z-30"
-        title="Bắt đầu cuộc trò chuyện mới"
-      >
-        <PenSquare className="text-white" size={24} />
-      </button>
+      {/* Undo Delete Toast */}
+      {deletedConversation && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-[90%] z-50 animate-in">
+          <div className="glass-card rounded-2xl p-4 flex items-center justify-between gap-3 shadow-2xl border border-[var(--border)]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[var(--danger)]/10 flex items-center justify-center flex-shrink-0">
+                <X size={18} className="text-[var(--danger)]" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-white">Đã xóa hội thoại</p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Hoàn tác trong {undoCountdown}s
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleUndoDelete}
+              className="flex items-center gap-2 px-4 py-2 bg-[var(--primary)] hover:bg-[var(--primary-hover)] text-white text-sm font-bold rounded-xl transition-all"
+            >
+              <Undo2 size={16} />
+              Hoàn tác
+            </button>
+          </div>
+        </div>
+      )}
 
-      {/* 3. Bottom Navigation */}
-      <div className="flex-shrink-0 border-t border-[#222d34] bg-[#0b141a] px-2 py-3">
-        <div className="flex items-center justify-around">
-          <button 
-            onClick={() => setActiveTab("messages")} 
-            className={`flex flex-col items-center gap-1 flex-1 transition-colors ${activeTab === "messages" ? "text-[#0084ff]" : "text-[#8e9196] hover:text-white"}`}
-          >
-            <MessageSquare size={24} className={activeTab === "messages" ? "fill-current" : ""} />
-            <span className="text-[10px] font-bold">Tin nhắn</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab("calls")} 
-            className={`flex flex-col items-center gap-1 flex-1 transition-colors ${activeTab === "calls" ? "text-[#0084ff]" : "text-[#8e9196] hover:text-white"}`}
-          >
-            <Phone size={24} />
-            <span className="text-[10px] font-bold">Cuộc gọi</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab("contacts")} 
-            className={`flex flex-col items-center gap-1 flex-1 transition-colors ${activeTab === "contacts" ? "text-[#0084ff]" : "text-[#8e9196] hover:text-white"}`}
-          >
-            <Users size={24} />
-            <span className="text-[10px] font-bold">Danh bạ</span>
-          </button>
-          <button 
-            onClick={() => setActiveTab("profile")} 
-            className={`flex flex-col items-center gap-1 flex-1 transition-colors ${activeTab === "profile" ? "text-[#0084ff]" : "text-[#8e9196] hover:text-white"}`}
-          >
-            <UserIcon size={24} />
-            <span className="text-[10px] font-bold">Cá nhân</span>
-          </button>
+      {/* 3. Bottom Navigation - Glassmorphism */}
+      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] flex-shrink-0 z-40">
+        <div className="glass-card rounded-3xl px-2 py-2 flex items-center justify-between shadow-2xl">
+          {[
+            { id: "messages", icon: MessageSquare, label: "Chat" },
+            { id: "calls", icon: Phone, label: "Gọi" },
+            { id: "contacts", icon: Users, label: "Bạn bè" },
+            { id: "profile", icon: UserIcon, label: "Tôi" },
+          ].map((tab) => (
+            <button 
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)} 
+              className={`relative flex flex-col items-center justify-center gap-1 h-14 w-16 rounded-2xl transition-all duration-300 ${
+                activeTab === tab.id 
+                  ? "text-white" 
+                  : "text-[var(--text-muted)] hover:text-white hover:bg-white/5"
+              }`}
+            >
+              {/* Active background */}
+              {activeTab === tab.id && (
+                <div className="absolute inset-0 bg-gradient-to-b from-[var(--primary)]/30 to-transparent rounded-2xl" />
+              )}
+              
+              {/* Active dot */}
+              {activeTab === tab.id && (
+                <div className="absolute -top-1 w-1.5 h-1.5 bg-[var(--primary)] rounded-full shadow-lg shadow-[var(--primary)]" />
+              )}
+              
+              <tab.icon 
+                size={22} 
+                className={`relative z-10 ${activeTab === tab.id ? "drop-shadow-[0_0_8px_var(--primary-glow)]" : ""}`} 
+              />
+              <span className="relative z-10 text-[9px] font-black uppercase tracking-wider">{tab.label}</span>
+            </button>
+          ))}
         </div>
       </div>
     </div>

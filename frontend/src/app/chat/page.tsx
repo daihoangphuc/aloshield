@@ -11,6 +11,7 @@ import { Sidebar } from "@/components/chat/Sidebar";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { EmptyChat } from "@/components/chat/EmptyChat";
 import { VideoCallWindow } from "@/components/call/VideoCallWindow";
+import { IncomingCallModal } from "@/components/call/IncomingCallModal";
 import { useCallStore } from "@/stores/callStore";
 import { Loader2 } from "lucide-react";
 
@@ -18,11 +19,19 @@ export default function ChatPage() {
   const router = useRouter();
   const { user, setUser, setLoading: setAuthLoading } = useAuthStore();
   const { activeConversationId, setConversations } = useConversationsStore();
-  const { currentCall } = useCallStore();
+  const { currentCall, incomingCall } = useCallStore();
   const [isMobile, setIsMobile] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
+
+  // Add chat-page class to body for overflow control
+  useEffect(() => {
+    document.body.classList.add("chat-page");
+    return () => {
+      document.body.classList.remove("chat-page");
+    };
+  }, []);
 
   // Authentication Check & Load Data
   useEffect(() => {
@@ -72,7 +81,8 @@ export default function ChatPage() {
   // Handle Responsive
   useEffect(() => {
     const handleResize = () => {
-      const mobile = window.innerWidth < 768;
+      // Tăng breakpoint lên 1024px cho tablet/desktop trải nghiệm tốt hơn
+      const mobile = window.innerWidth < 1024;
       setIsMobile(mobile);
       if (!mobile) setShowSidebar(true);
     };
@@ -85,7 +95,10 @@ export default function ChatPage() {
   // Sync sidebar visibility with active conversation on mobile
   useEffect(() => {
     if (isMobile && activeConversationId) {
-      setShowSidebar(false);
+      // Chỉ tự động ẩn sidebar trên mobile thực thụ
+      if (window.innerWidth < 768) {
+        setShowSidebar(false);
+      }
     }
   }, [activeConversationId, isMobile]);
 
@@ -104,9 +117,11 @@ export default function ChatPage() {
       <aside 
         className={`${
           isMobile && !showSidebar ? "hidden" : "flex"
-        } w-full md:w-[350px] lg:w-[400px] flex-shrink-0 h-full border-r border-[var(--border)] z-20 bg-[var(--sidebar-bg)]`}
+        } w-full md:w-[320px] lg:w-[380px] xl:w-[420px] flex-shrink-0 h-full border-r border-[var(--border)] z-20 bg-[var(--sidebar-bg)] transition-all duration-300`}
       >
-        <Sidebar onConversationSelect={() => isMobile && setShowSidebar(false)} />
+        <Sidebar onConversationSelect={() => {
+          if (window.innerWidth < 1024) setShowSidebar(false);
+        }} />
       </aside>
 
       {/* Main Chat Area */}
@@ -128,6 +143,9 @@ export default function ChatPage() {
 
       {/* Video Call Overlay */}
       {currentCall && <VideoCallWindow />}
+      
+      {/* Incoming Call Modal */}
+      {incomingCall && <IncomingCallModal />}
     </div>
   );
 }

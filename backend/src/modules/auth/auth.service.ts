@@ -101,45 +101,92 @@ export class AuthService {
     displayName?: string;
     avatarUrl?: string;
   }) {
-    // Check if user exists by Supabase ID
-    let user = await this.usersService.findBySupabaseId(data.supabaseUserId);
-
-    if (!user) {
-      // Check if user exists by email
-      user = await this.usersService.findByEmail(data.email);
-
-      if (user) {
-        // Link Supabase account to existing user
-        user = await this.usersService.updateUser(user.id, {
-          supabase_id: data.supabaseUserId,
-          avatar_url: user.avatar_url || data.avatarUrl,
-        });
-      } else {
-        // Create new user
-        const username = await this.generateUniqueUsername(data.email);
-        user = await this.usersService.createUser({
-          email: data.email,
-          username,
-          display_name: data.displayName || username,
-          avatar_url: data.avatarUrl,
-          supabase_id: data.supabaseUserId,
-        });
+    try {
+      // Validate input
+      if (!data.supabaseUserId || !data.email) {
+        throw new BadRequestException('Thiếu thông tin Supabase ID hoặc email');
       }
+
+      // Check if user exists by Supabase ID
+      let user = await this.usersService.findBySupabaseId(data.supabaseUserId);
+
+      if (!user) {
+        // Check if user exists by email
+        user = await this.usersService.findByEmail(data.email);
+
+        if (user) {
+          // Link Supabase account to existing user and update avatar
+          console.log(`Linking Supabase account to existing user: ${user.email}`);
+          user = await this.usersService.updateUser(user.id, {
+            supabase_id: data.supabaseUserId,
+            avatar_url: data.avatarUrl || user.avatar_url, // Prefer new avatar from Google
+            display_name: data.displayName || user.display_name,
+          });
+        } else {
+          // Create new user
+          console.log(`Creating new user for Supabase account: ${data.email}`);
+          const username = await this.generateUniqueUsername(data.email);
+          
+          try {
+            user = await this.usersService.createUser({
+              email: data.email,
+              username,
+              display_name: data.displayName || username,
+              avatar_url: data.avatarUrl,
+              supabase_id: data.supabaseUserId,
+            });
+            console.log(`New user created: ${user.id}`);
+          } catch (createError: any) {
+            console.error('Error creating user:', createError);
+            
+            // If user creation failed due to duplicate, try to find and link
+            if (createError.code === '23505') { // PostgreSQL unique violation
+              user = await this.usersService.findByEmail(data.email);
+              if (user && !user.supabase_id) {
+                user = await this.usersService.updateUser(user.id, {
+                  supabase_id: data.supabaseUserId,
+                });
+              } else if (!user) {
+                throw new BadRequestException('Không thể tạo tài khoản. Email hoặc username đã tồn tại.');
+              }
+            } else {
+              throw createError;
+            }
+          }
+        }
+      } else {
+        console.log(`User found by Supabase ID: ${user.email}`);
+        // Always update avatar from Google/Supabase if provided
+        if (data.avatarUrl) {
+          user = await this.usersService.updateUser(user.id, {
+            avatar_url: data.avatarUrl,
+            display_name: data.displayName || user.display_name,
+          });
+          console.log(`Updated avatar for user: ${user.email} -> ${data.avatarUrl}`);
+        }
+      }
+
+      if (!user) {
+        throw new BadRequestException('Không thể tạo hoặc tìm thấy tài khoản');
+      }
+
+      // Generate tokens
+      const tokens = await this.generateTokens(user);
+
+      return {
+        tokens,
+        user: {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          display_name: user.display_name,
+          avatar_url: user.avatar_url,
+        },
+      };
+    } catch (error: any) {
+      console.error('syncSupabaseUser error:', error);
+      throw new BadRequestException(error.message || 'Đồng bộ tài khoản Supabase thất bại');
     }
-
-    // Generate tokens
-    const tokens = await this.generateTokens(user);
-
-    return {
-      tokens,
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        display_name: user.display_name,
-        avatar_url: user.avatar_url,
-      },
-    };
   }
 
   async validateGoogleUser(profile: GoogleProfile) {

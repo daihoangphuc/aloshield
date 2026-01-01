@@ -9,13 +9,19 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
 
+  const nodeEnv = configService.get('NODE_ENV') || 'development';
+  const frontendUrl = configService.get('FRONTEND_URL') || 'http://localhost:3000';
+
+  console.log(`🔧 Environment: ${nodeEnv}`);
+  console.log(`🌐 Frontend URL: ${frontendUrl}`);
+
   // Security
   app.use(helmet());
   app.use(cookieParser());
 
-  // CORS
+  // CORS - Allow frontend origin
   app.enableCors({
-    origin: configService.get('FRONTEND_URL') || 'http://localhost:3000',
+    origin: frontendUrl,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],

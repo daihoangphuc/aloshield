@@ -188,6 +188,7 @@ export class SupabaseService implements OnModuleInit {
     session_version: number;
     ratchet_step: number;
     reply_to_message_id?: string;
+    status?: 'sent' | 'delivered' | 'read';
   }) {
     const { data, error } = await this.supabaseAdmin
       .from('messages')

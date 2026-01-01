@@ -93,6 +93,7 @@ export class ConversationsService {
         encrypted_content,
         content_type,
         sender_id,
+        status,
         created_at,
         sender:users!sender_id (
           id,
@@ -152,10 +153,31 @@ export class ConversationsService {
     const supabase = this.supabaseService.getAdminClient();
 
     // Get all conversation IDs for user
-    const { data: participations, error } = await supabase
+    // Try with deleted_at filter first, fallback to without if column doesn't exist
+    let participations: any[] | null = null;
+    let error: any = null;
+
+    // First try with deleted_at filter (for soft delete support)
+    const result = await supabase
       .from('conversation_participants')
-      .select('conversation_id')
+      .select('conversation_id, deleted_at')
       .eq('user_id', userId);
+
+    if (result.error) {
+      // If error (column might not exist), try without the filter
+      console.error('Error fetching with deleted_at:', result.error.message);
+      const fallbackResult = await supabase
+        .from('conversation_participants')
+        .select('conversation_id')
+        .eq('user_id', userId);
+      
+      participations = fallbackResult.data;
+      error = fallbackResult.error;
+    } else {
+      // Filter out soft-deleted conversations
+      participations = result.data?.filter((p: any) => !p.deleted_at) || [];
+      error = null;
+    }
 
     if (error) throw error;
     if (!participations || participations.length === 0) {
@@ -204,6 +226,37 @@ export class ConversationsService {
 
     if (error) throw error;
     return { success: true };
+  }
+
+  async softDeleteConversation(conversationId: string, userId: string) {
+    const supabase = this.supabaseService.getAdminClient();
+
+    // Verify user is participant
+    const isParticipant = await this.supabaseService.isParticipant(conversationId, userId);
+    if (!isParticipant) {
+      throw new ForbiddenException('You are not a participant of this conversation');
+    }
+
+    // Try soft delete first (if deleted_at column exists)
+    const { error } = await supabase
+      .from('conversation_participants')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('conversation_id', conversationId)
+      .eq('user_id', userId);
+
+    if (error) {
+      // If soft delete fails (column doesn't exist), do hard delete
+      console.warn('Soft delete failed, falling back to hard delete:', error.message);
+      const { error: deleteError } = await supabase
+        .from('conversation_participants')
+        .delete()
+        .eq('conversation_id', conversationId)
+        .eq('user_id', userId);
+
+      if (deleteError) throw deleteError;
+    }
+
+    return { success: true, message: 'Conversation deleted' };
   }
 }
 

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Delete,
   Param,
   Body,
   Query,
@@ -47,6 +48,11 @@ export class ConversationsController {
   @Post(':id/read')
   async markAsRead(@Param('id') id: string, @Req() req: any) {
     return this.conversationsService.markAsRead(id, req.user.id);
+  }
+
+  @Delete(':id')
+  async deleteConversation(@Param('id') id: string, @Req() req: any) {
+    return this.conversationsService.softDeleteConversation(id, req.user.id);
   }
 }
 

@@ -8,10 +8,8 @@ import {
   Video, 
   VideoOff, 
   PhoneOff, 
-  MoreVertical, 
   UserPlus, 
   ChevronDown, 
-  Shield, 
   Lock,
   Volume2,
   MessageSquare
@@ -31,19 +29,35 @@ export function VideoCallWindow() {
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [timer, setTimer] = useState("00:00");
 
   useEffect(() => {
+    console.log("🎥 Local stream updated:", localStream);
     if (localVideoRef.current && localStream) {
+      console.log("🎥 Setting local video srcObject");
       localVideoRef.current.srcObject = localStream;
+      localVideoRef.current.play().catch(e => console.error("Error playing local video:", e));
     }
   }, [localStream]);
 
   useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
+    console.log("🎥 Remote stream updated:", remoteStream);
+    if (remoteStream) {
+      // For video calls, use video element
+      if (currentCall?.callType === "video" && remoteVideoRef.current) {
+        console.log("🎥 Setting remote video srcObject");
+        remoteVideoRef.current.srcObject = remoteStream;
+        remoteVideoRef.current.play().catch(e => console.error("Error playing remote video:", e));
+      }
+      // For audio calls, use audio element
+      if (currentCall?.callType === "audio" && remoteAudioRef.current) {
+        console.log("🔊 Setting remote audio srcObject");
+        remoteAudioRef.current.srcObject = remoteStream;
+        remoteAudioRef.current.play().catch(e => console.error("Error playing remote audio:", e));
+      }
     }
-  }, [remoteStream]);
+  }, [remoteStream, currentCall?.callType]);
 
   // Simple call timer simulation
   useEffect(() => {
@@ -60,10 +74,12 @@ export function VideoCallWindow() {
   if (!currentCall) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-[#1a1a1a] flex flex-col animate-in">
+    <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col animate-in">
+      {/* Hidden audio element for audio calls */}
+      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
       {/* REMOTE VIDEO (FULL SCREEN) */}
       <div className="absolute inset-0 overflow-hidden">
-        {remoteStream ? (
+        {remoteStream && currentCall.callType === "video" ? (
           <video
             ref={remoteVideoRef}
             autoPlay
@@ -71,99 +87,138 @@ export function VideoCallWindow() {
             className="w-full h-full object-cover"
           />
         ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center bg-[#2a2a2a]">
-            <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-[#3b82f6] mb-6">
-              <img 
-                src={currentCall.recipientAvatar || "/default-avatar.png"} 
-                className="w-full h-full object-cover" 
-                alt=""
-              />
+          <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a]">
+            {/* Background effects */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+              <div className="absolute top-1/3 left-1/3 w-[400px] h-[400px] bg-[var(--primary)]/10 rounded-full blur-[150px]" />
+              <div className="absolute bottom-1/3 right-1/3 w-[300px] h-[300px] bg-[var(--accent)]/10 rounded-full blur-[120px]" />
             </div>
-            <h2 className="text-2xl font-bold text-white">{currentCall.recipientName}</h2>
-            <p className="text-[#8696a0] mt-2 animate-pulse">Đang kết nối bảo mật...</p>
+            
+            <div className="relative">
+              <div className="avatar-ring w-32 h-32 pulse-glow">
+                <div className="w-full h-full rounded-full bg-[#1a1a1a] overflow-hidden">
+                  {currentCall.recipientAvatar ? (
+                    <img 
+                      src={currentCall.recipientAvatar} 
+                      className="w-full h-full object-cover" 
+                      alt=""
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-white font-black text-4xl bg-gradient-to-br from-[var(--primary)] to-[var(--accent)]">
+                      {currentCall.recipientName?.[0] || "?"}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            <h2 className="text-2xl font-black text-white mt-6">{currentCall.recipientName}</h2>
+            <p className="text-[var(--text-muted)] mt-2 animate-pulse font-medium">Đang kết nối bảo mật...</p>
           </div>
         )}
       </div>
 
       {/* TOP HEADER */}
-      <div className="relative flex items-center justify-between p-6 bg-gradient-to-b from-black/60 to-transparent">
-        <button onClick={endCall} className="p-2.5 bg-white/10 hover:bg-white/20 rounded-full backdrop-blur-md transition-all">
+      <div className="relative flex items-center justify-between p-6 bg-gradient-to-b from-black/80 to-transparent">
+        <button 
+          onClick={endCall} 
+          className="p-3 glass-card rounded-full hover:bg-white/10 transition-all"
+        >
           <ChevronDown className="text-white w-6 h-6" />
         </button>
         
         <div className="flex flex-col items-center">
           <h3 className="text-white font-bold text-lg">{currentCall.recipientName || "Đang gọi..."}</h3>
-          <div className="flex items-center gap-2 mt-1 px-3 py-1 bg-black/30 rounded-full backdrop-blur-md border border-white/10">
-            <Lock className="w-3.5 h-3.5 text-[#3b82f6] fill-[#3b82f6]/20" />
-            <span className="text-white text-xs font-medium tracking-wider">{timer}</span>
-            <span className="text-[#22c55e] text-xs font-bold ml-1">• Encrypted</span>
+          <div className="flex items-center gap-2 mt-2 px-4 py-1.5 glass-card rounded-full">
+            <Lock className="w-3.5 h-3.5 text-[var(--primary)]" />
+            <span className="text-white text-xs font-mono font-medium tracking-wider">{timer}</span>
+            <span className="text-[var(--success)] text-xs font-bold">• Encrypted</span>
           </div>
         </div>
 
-        <button className="p-2.5 bg-white/10 hover:bg-white/20 rounded-full backdrop-blur-md transition-all">
+        <button className="p-3 glass-card rounded-full hover:bg-white/10 transition-all">
           <UserPlus className="text-white w-6 h-6" />
         </button>
       </div>
 
-      {/* LOCAL VIDEO (FLOATING) */}
-      <div className="absolute top-24 right-6 w-32 h-48 md:w-40 md:h-60 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black animate-in">
-        {localStream && !isVideoOff ? (
-          <video
-            ref={localVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover -scale-x-100"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-[#333]">
-            <VideoOff className="text-white/20 w-10 h-10" />
-          </div>
-        )}
-        {isMuted && (
-          <div className="absolute bottom-2 right-2 p-1.5 bg-red-500 rounded-full">
-            <MicOff className="text-white w-3 h-3" />
-          </div>
-        )}
-      </div>
+      {/* LOCAL VIDEO (FLOATING) - Only show for video calls */}
+      {currentCall.callType === "video" && (
+        <div className="absolute top-24 right-6 w-32 h-48 md:w-40 md:h-60 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black animate-in">
+          {localStream && !isVideoOff ? (
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover -scale-x-100"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-[var(--card)]">
+              <VideoOff className="text-white/20 w-10 h-10" />
+            </div>
+          )}
+          {isMuted && (
+            <div className="absolute bottom-2 right-2 p-1.5 bg-[var(--danger)] rounded-full">
+              <MicOff className="text-white w-3 h-3" />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* BOTTOM CONTROLS */}
-      <div className="mt-auto relative p-8 bg-gradient-to-t from-black/80 to-transparent flex flex-col items-center">
-        <div className="flex items-center gap-4 md:gap-6 bg-black/40 p-4 rounded-[32px] backdrop-blur-xl border border-white/10 shadow-2xl">
+      <div className="mt-auto relative p-8 bg-gradient-to-t from-black/90 to-transparent flex flex-col items-center">
+        <div className="flex items-center gap-4 md:gap-6 glass-card p-4 rounded-[32px] shadow-2xl">
+          {/* Mute button */}
           <button 
             onClick={toggleMute}
-            className={`p-4 rounded-full transition-all ${isMuted ? "bg-white/10 text-white" : "bg-white/10 text-white hover:bg-white/20"}`}
+            className={`relative p-4 rounded-full transition-all duration-300 ${
+              isMuted 
+                ? "bg-[var(--danger)]/20 text-[var(--danger)] ring-2 ring-[var(--danger)]/30" 
+                : "bg-white/10 text-white hover:bg-white/20"
+            }`}
           >
-            {isMuted ? <MicOff className="w-6 h-6" /> : <Mic className="w-6 h-6" />}
+            {isMuted && (
+              <div className="absolute inset-0 rounded-full animate-ping bg-[var(--danger)]/20" />
+            )}
+            {isMuted ? <MicOff className="w-6 h-6 relative z-10" /> : <Mic className="w-6 h-6" />}
           </button>
 
+          {/* Video toggle button */}
           <button 
             onClick={toggleVideo}
-            className={`p-4 rounded-full transition-all ${isVideoOff ? "bg-white/10 text-white" : "bg-white/10 text-white hover:bg-white/20"}`}
+            className={`relative p-4 rounded-full transition-all duration-300 ${
+              isVideoOff 
+                ? "bg-[var(--danger)]/20 text-[var(--danger)] ring-2 ring-[var(--danger)]/30" 
+                : "bg-white/10 text-white hover:bg-white/20"
+            }`}
           >
             {isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
           </button>
 
+          {/* Chat button */}
           <button className="p-4 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all relative">
             <MessageSquare className="w-6 h-6" />
-            <div className="absolute top-3.5 right-3.5 w-2 h-2 bg-[#3b82f6] rounded-full" />
+            <div className="absolute top-3.5 right-3.5 w-2 h-2 bg-[var(--primary)] rounded-full" />
           </button>
 
+          {/* Volume button */}
           <button className="p-4 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all">
             <Volume2 className="w-6 h-6" />
           </button>
 
+          {/* End call button */}
           <button 
             onClick={endCall}
-            className="p-5 bg-red-500 hover:bg-red-600 rounded-full transition-all shadow-lg shadow-red-500/40 active:scale-90"
+            className="relative p-5 bg-gradient-to-br from-[var(--danger)] to-[#e11d48] rounded-full transition-all shadow-xl shadow-[var(--danger)]/40 hover:shadow-[var(--danger)]/60 active:scale-90 group"
           >
-            <PhoneOff className="w-7 h-7 text-white fill-current" />
+            <div className="absolute inset-0 rounded-full bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <PhoneOff className="w-7 h-7 text-white relative z-10" />
           </button>
         </div>
         
-        <p className="mt-4 text-[10px] text-white/40 font-bold uppercase tracking-[0.2em]">HD Quality Signaling Secured</p>
+        <p className="mt-4 text-[10px] text-white/40 font-bold uppercase tracking-[0.2em] font-mono">
+          HD Quality • Signaling Secured
+        </p>
       </div>
     </div>
   );
 }
-
