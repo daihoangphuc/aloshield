@@ -30,7 +30,9 @@ class SocketManager {
       socketPath = '/api/socket.io/';
     }
 
-    // Main socket for messages
+    console.log('🔌 Connecting sockets:', { baseWsUrl, socketPath });
+
+    // Main socket for messages (default namespace)
     this.socket = io(baseWsUrl, {
       auth: { token },
       transports: ["websocket", "polling"],
@@ -44,10 +46,19 @@ class SocketManager {
     this.setupMainSocketListeners();
 
     // Calls socket - connect to /calls namespace
-    this.callsSocket = io(`${baseWsUrl}/calls`, {
+    // Socket.IO client: namespace goes in the URL, path goes in options
+    // URL: wss://api.phucndh.site/calls, path: /api/socket.io/
+    // Result: wss://api.phucndh.site/api/socket.io/calls
+    const callsUrl = `${baseWsUrl}/calls`;
+    console.log('📞 Connecting calls socket to:', callsUrl, 'with path:', socketPath);
+    this.callsSocket = io(callsUrl, {
       auth: { token },
       transports: ["websocket", "polling"],
-      path: socketPath,  // Same path, different namespace
+      path: socketPath,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: 10,
     });
 
     this.callsSocket.on("connect", () => {
