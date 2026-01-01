@@ -96,9 +96,14 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       const newMessages = { ...state.messages };
 
       for (const conversationId in newMessages) {
-        newMessages[conversationId] = newMessages[conversationId].map((msg) =>
-          msg.id === tempId ? { ...msg, id: realId } : msg
-        );
+        newMessages[conversationId] = newMessages[conversationId].map((msg) => {
+          if (msg.id === tempId) {
+            // Preserve _renderKey to prevent React re-render flicker
+            const renderKey = (msg as any)._renderKey || tempId;
+            return { ...msg, id: realId, _renderKey: renderKey };
+          }
+          return msg;
+        });
       }
 
       return { messages: newMessages };

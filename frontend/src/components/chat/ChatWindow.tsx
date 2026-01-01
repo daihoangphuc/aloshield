@@ -356,7 +356,8 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     }
 
     const tempId = `temp-${Date.now()}`;
-    const tempMessage: Message = {
+    const renderKey = tempId; // Stable key for React rendering
+    const tempMessage: Message & { _renderKey?: string } = {
       id: tempId,
       conversation_id: conversationId,
       sender_id: user?.id || "",
@@ -368,6 +369,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       created_at: new Date().toISOString(),
       sender: user || undefined,
       status: "sent", // ✅ Show "sent" status immediately for smooth UX
+      _renderKey: renderKey, // Stable key to prevent flicker when ID updates
     };
 
     addMessage(tempMessage);
@@ -630,7 +632,8 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       if (selectedFile.type.startsWith("image/")) contentType = "image";
       else if (selectedFile.type.startsWith("video/")) contentType = "video";
       else if (selectedFile.type.startsWith("audio/")) contentType = "audio";
-      const tempMessage: Message = {
+      const renderKey = tempId; // Stable key for React rendering
+      const tempMessage: Message & { _renderKey?: string } = {
         id: tempId,
         conversation_id: conversationId,
         sender_id: user?.id || "",
@@ -642,6 +645,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         created_at: new Date().toISOString(),
         sender: user || undefined,
         status: "sent", // ✅ Show "sent" status immediately for smooth UX
+        _renderKey: renderKey, // Stable key to prevent flicker when ID updates
         attachments: [{
           id: uploadResult.attachmentId,
           r2_key: uploadResult.r2Key,
@@ -996,8 +1000,10 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           const isEdited = !!msg.edited_at;
           const reactions = (msg as any).reactions || [];
 
+          // Use stable render key to prevent flicker when ID changes from temp to real
+          const renderKey = (msg as any)._renderKey || msg.id;
           return (
-            <div key={msg.id} className="stagger-item" style={{ animationDelay: `${idx * 20}ms` }}>
+            <div key={renderKey} className="stagger-item" style={{ animationDelay: `${idx * 20}ms` }}>
               {/* Date separator */}
               {showDate && (
                 <div className="flex justify-center my-4 md:my-6">
