@@ -128,7 +128,7 @@ export default function ChatPage() {
       <main 
         className={`${
           isMobile && showSidebar ? "hidden" : "flex"
-        } flex-1 h-full flex flex-col relative bg-[var(--chat-bg)]`}
+        } flex-1 ${isMobile ? 'h-screen' : 'h-full'} flex flex-col relative bg-[var(--chat-bg)] overflow-hidden`}
       >
         {activeConversationId ? (
           <ChatWindow

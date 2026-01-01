@@ -32,6 +32,7 @@ import {
   Download,
   Play,
   Reply,
+  Layers,
 } from "lucide-react";
 
 interface ChatWindowProps {
@@ -198,12 +199,25 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   const [editingContent, setEditingContent] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
+  const [showStickerPicker, setShowStickerPicker] = useState(false);
+  const stickerButtonRef = useRef<HTMLButtonElement>(null);
+  const stickerPickerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // Image modal state
   const [selectedImage, setSelectedImage] = useState<{ url: string; fileName: string } | null>(null);
   
   // Common emoji reactions
   const quickEmojis = ["❤️", "😂", "😮", "😢", "😡", "👍"];
+  
+  // Sticker packs - using emoji as stickers for now
+  const stickerPacks = [
+    { name: "Cảm xúc", stickers: ["😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "🤩", "😘", "😗", "😚", "😙"] },
+    { name: "Thú cưng", stickers: ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔", "🐧", "🐦", "🐤", "🦆"] },
+    { name: "Thức ăn", stickers: ["🍎", "🍌", "🍇", "🍓", "🍉", "🍑", "🍒", "🥝", "🍅", "🥑", "🍔", "🍕", "🌮", "🌯", "🍗", "🍖", "🥩", "🍟", "🍿", "🍰"] },
+    { name: "Hoạt động", stickers: ["⚽", "🏀", "🏈", "⚾", "🎾", "🏐", "🏉", "🎱", "🏓", "🏸", "🥊", "🎯", "🎮", "🎲", "🃏", "🎴", "🎨", "🎭", "🎪", "🎬"] },
+    { name: "Biểu tượng", stickers: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "☮️"] },
+  ];
 
   const conversation = conversations.find((c) => c.id === conversationId);
   const conversationMessages = messages[conversationId] || [];
@@ -429,6 +443,22 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     }
   };
 
+  const handleSelectSticker = (sticker: string) => {
+    // Insert sticker into input field instead of sending immediately
+    setInputValue(prev => prev + sticker);
+    setShowStickerPicker(false);
+    
+    // Focus on textarea after inserting sticker
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        // Move cursor to end of text
+        const length = textareaRef.current.value.length;
+        textareaRef.current.setSelectionRange(length, length);
+      }
+    }, 0);
+  };
+
   // File handling functions
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, isImage: boolean) => {
     const file = e.target.files?.[0];
@@ -539,6 +569,26 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     document.addEventListener("paste", handlePaste);
     return () => document.removeEventListener("paste", handlePaste);
   }, []);
+
+  // Close sticker picker when clicking outside
+  useEffect(() => {
+    if (!showStickerPicker) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (
+        stickerButtonRef.current &&
+        !stickerButtonRef.current.contains(target) &&
+        stickerPickerRef.current &&
+        !stickerPickerRef.current.contains(target)
+      ) {
+        setShowStickerPicker(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showStickerPicker]);
 
   const handleSendFile = async () => {
     if (!selectedFile || isUploading || !otherParticipant) return;
@@ -788,7 +838,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
 
   return (
     <div 
-      className="flex-1 flex flex-col h-full bg-[var(--chat-bg)] relative"
+      className={`flex-1 flex flex-col ${isMobile ? 'h-screen' : 'h-full'} bg-[var(--chat-bg)] relative overflow-hidden`}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -808,7 +858,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       )}
       
       {/* Header */}
-      <header className="h-[70px] md:h-[80px] flex items-center justify-between px-3 md:px-6 border-b border-[var(--border)] bg-[var(--chat-bg)]/80 backdrop-blur-xl flex-shrink-0 z-10">
+      <header className={`h-[70px] md:h-[80px] flex items-center justify-between px-3 md:px-6 border-b border-[var(--border)] bg-[var(--chat-bg)]/80 backdrop-blur-xl flex-shrink-0 z-10 ${isMobile ? 'sticky top-0' : ''}`}>
         <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1 overflow-hidden">
           {isMobile && (
             <button 
@@ -881,7 +931,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           </button>
           <button 
             onClick={handleAudioCall}
-            className="p-2 md:p-2.5 hover:bg-white/5 rounded-xl transition-all group active:scale-90 hidden sm:flex"
+            className="p-2 md:p-2.5 hover:bg-white/5 rounded-xl transition-all group active:scale-90"
             title="Cuộc gọi âm thanh"
           >
             <Phone size={20} className="text-[var(--primary)] group-hover:drop-shadow-[0_0_8px_var(--primary-glow)] transition-all" />
@@ -895,7 +945,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       {/* Messages Area */}
       <div 
         ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto px-3 md:px-4 pt-4 space-y-3 no-scrollbar"
+        className="flex-1 min-h-0 overflow-y-auto px-3 md:px-4 pt-4 space-y-3 no-scrollbar"
       >
         {/* E2EE Notice */}
         <div className="flex justify-center mb-4 md:mb-6">
@@ -1233,6 +1283,33 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         </span>
       </div>
 
+      {/* Sticker Picker */}
+      {showStickerPicker && (
+        <div ref={stickerPickerRef} className="border-t border-[var(--border)] bg-[var(--card)] p-3 md:p-4 flex-shrink-0">
+          <div className="max-h-[300px] overflow-y-auto">
+            {stickerPacks.map((pack, packIndex) => (
+              <div key={packIndex} className="mb-4 last:mb-0">
+                <h4 className="text-xs font-semibold text-[var(--text-muted)] mb-2 px-1 uppercase tracking-wider">
+                  {pack.name}
+                </h4>
+                <div className="grid grid-cols-8 md:grid-cols-10 gap-2">
+                  {pack.stickers.map((sticker, stickerIndex) => (
+                    <button
+                      key={stickerIndex}
+                      onClick={() => handleSelectSticker(sticker)}
+                      className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center text-2xl md:text-3xl hover:bg-white/10 rounded-xl transition-all active:scale-90 hover:scale-110"
+                      title={sticker}
+                    >
+                      {sticker}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Reply Preview - Floating above input */}
       {replyToMessage && (
         <div className="mx-3 md:mx-4 mb-2 animate-in slide-in-from-bottom-2 duration-200">
@@ -1332,7 +1409,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       )}
 
       {/* Input Area */}
-      <div className="p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)]">
+      <div className={`p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)] ${isMobile ? 'pb-4' : ''}`} style={isMobile ? { paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' } : undefined}>
         {/* Hidden file inputs */}
         <input
           ref={imageInputRef}
@@ -1359,7 +1436,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           </button>
           <button 
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 md:p-2.5 hover:bg-white/5 rounded-xl transition-all active:scale-90 hidden sm:flex" 
+            className="p-2 md:p-2.5 hover:bg-white/5 rounded-xl transition-all active:scale-90" 
             title="Đính kèm tệp"
           >
             <Paperclip size={20} className="text-[var(--text-muted)] hover:text-[var(--primary)]" />
@@ -1370,6 +1447,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           <div className="absolute -inset-0.5 bg-gradient-to-r from-[var(--primary)] to-[var(--accent)] rounded-[20px] md:rounded-[24px] opacity-0 group-focus-within:opacity-30 blur-sm transition-opacity duration-500" />
           <div className="relative bg-[#0d1117] rounded-[20px] md:rounded-[24px] px-4 py-2.5 md:py-3 flex items-center gap-2 border border-[var(--border)] group-focus-within:border-[var(--primary)]/50 transition-all duration-300">
             <textarea
+              ref={textareaRef}
               placeholder="Nhập tin nhắn..."
               className="flex-1 bg-transparent border-none outline-none text-white text-[14px] md:text-[15px] placeholder:text-[var(--text-muted)] resize-none max-h-24 min-h-[20px] overflow-y-auto"
               rows={1}
@@ -1388,8 +1466,12 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
               }}
               disabled={isSending || isUploading}
             />
-            <button className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-90 flex-shrink-0">
-              <Smile size={18} className="text-[var(--text-muted)] hover:text-white" />
+            <button 
+              ref={stickerButtonRef}
+              onClick={() => setShowStickerPicker(!showStickerPicker)}
+              className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-90 flex-shrink-0 relative"
+            >
+              <Layers size={18} className="text-[var(--text-muted)] hover:text-white" />
             </button>
           </div>
         </div>
