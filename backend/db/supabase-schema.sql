@@ -304,3 +304,23 @@ $$ LANGUAGE plpgsql;
 
 -- Thêm cột password_hash vào bảng users (nếu bảng đã tồn tại)
 ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+
+-- Thêm cột status vào bảng messages (nếu chưa tồn tại)
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'sent' CHECK (status IN ('sent', 'delivered', 'read'));
+
+-- =====================
+-- ENSURE MESSAGE_REACTIONS TABLE EXISTS
+-- =====================
+-- Chạy lại để đảm bảo bảng message_reactions tồn tại
+CREATE TABLE IF NOT EXISTS message_reactions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  message_id UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  emoji VARCHAR(10) NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  
+  UNIQUE(message_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reactions_message ON message_reactions(message_id);
+CREATE INDEX IF NOT EXISTS idx_reactions_user ON message_reactions(user_id);

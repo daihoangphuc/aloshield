@@ -86,44 +86,46 @@ export default function RegisterPage() {
   };
 
   return (
-    <main className="min-h-screen relative flex flex-col items-center p-6 py-16 overflow-x-hidden bg-[var(--background)]">
-      {/* Background */}
+    <main className="min-h-screen relative flex flex-col items-center justify-center p-4 md:p-6 overflow-x-hidden bg-[var(--background)]">
+      {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[var(--accent)]/10 rounded-full blur-[150px]" />
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-[var(--primary)]/8 rounded-full blur-[120px]" />
-        <div className="absolute inset-0 bg-grid-pattern opacity-20" />
+        <div className="absolute top-[-10%] right-[-10%] w-[400px] md:w-[600px] h-[400px] md:h-[600px] bg-[var(--accent)]/10 rounded-full blur-[100px] md:blur-[150px] animate-pulse" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[350px] md:w-[500px] h-[350px] md:h-[500px] bg-[var(--primary)]/8 rounded-full blur-[80px] md:blur-[120px] animate-pulse" style={{ animationDelay: '2s' }} />
+        <div className="absolute inset-0 bg-grid-pattern opacity-10 md:opacity-20" />
       </div>
 
       <div className="relative z-10 w-full max-w-md flex flex-col items-center animate-in">
         {/* Shield Logo Mini */}
-        <div className="relative mb-8 shield-animate">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[var(--accent)]/20 to-[var(--primary)]/20 flex items-center justify-center border border-white/10 backdrop-blur-xl">
-            <Shield className="w-10 h-10 text-[var(--accent)]" strokeWidth={1.5} />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[var(--background)] p-1.5 rounded-lg border border-white/10">
-              <Lock className="w-4 h-4 text-white" />
+        <div className="relative mb-6 md:mb-8 shield-animate">
+          <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-gradient-to-br from-[var(--accent)]/20 to-[var(--primary)]/20 flex items-center justify-center border border-white/10 backdrop-blur-xl shadow-2xl">
+            <Shield className="w-8 h-8 md:w-10 md:h-10 text-[var(--accent)]" strokeWidth={1.5} />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-[var(--background)] p-1.5 rounded-lg border border-white/10 shadow-inner">
+              <Lock className="w-3 h-3 md:w-4 md:h-4 text-white" />
             </div>
           </div>
         </div>
 
         {/* Title */}
-        <h1 className="text-3xl md:text-4xl font-black mb-3 text-white tracking-tight">
-          Tạo <span className="gradient-text">tài khoản mới</span>
-        </h1>
-        <p className="text-[var(--text-muted)] mb-8 text-center font-medium">
-          Tham gia cộng đồng chat bảo mật nhất hiện nay
-        </p>
+        <div className="text-center mb-8 md:mb-10">
+          <h1 className="text-3xl md:text-4xl font-black mb-3 text-white tracking-tight">
+            Tạo <span className="gradient-text">tài khoản mới</span>
+          </h1>
+          <p className="text-[var(--text-muted)] font-medium text-sm md:text-base px-4">
+            Tham gia cộng đồng chat bảo mật nhất hiện nay
+          </p>
+        </div>
 
         {/* Auth Card */}
-        <div className="w-full card p-8 shadow-2xl">
+        <div className="w-full glass-card p-6 md:p-8 shadow-2xl rounded-[32px]">
           {/* Tab Switcher */}
-          <div className="flex bg-[var(--background)] rounded-2xl p-1.5 mb-8 border border-[var(--border)]">
+          <div className="flex bg-black/20 rounded-2xl p-1 mb-8 border border-white/5">
             <Link
               href="/login"
-              className="flex-1 py-3 text-sm font-bold rounded-xl text-[var(--text-muted)] hover:text-white transition-colors text-center"
+              className="flex-1 py-3 text-sm font-bold rounded-xl text-[var(--text-muted)] hover:text-white transition-all duration-300 text-center"
             >
               Đăng Nhập
             </Link>
-            <button className="flex-1 py-3 text-sm font-bold rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--primary)] text-white shadow-lg">
+            <button className="flex-1 py-3 text-sm font-bold rounded-xl bg-gradient-to-r from-[var(--accent)] to-[var(--primary)] text-white shadow-lg transition-all duration-300">
               Đăng Ký
             </button>
           </div>
@@ -150,26 +152,26 @@ export default function RegisterPage() {
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   required
-                  className="input-field pl-12"
+                  className="input-field !pl-14"
                 />
               </div>
             </div>
 
             {/* Username & Display Name Row */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 gap-3 md:gap-4">
               <div className="space-y-2">
                 <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-[0.2em] ml-1">
                   Username
                 </label>
                 <div className="relative group">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)] group-focus-within:text-[var(--primary)] transition-colors" />
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)] group-focus-within:text-[var(--primary)] transition-colors" />
                   <input
                     type="text"
                     placeholder="johndoe"
                     value={formData.username}
                     onChange={(e) => setFormData({ ...formData, username: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "") })}
                     required
-                    className="input-field pl-10 text-sm py-3"
+                    className="input-field !pl-12 text-sm py-3"
                   />
                 </div>
               </div>
@@ -178,13 +180,13 @@ export default function RegisterPage() {
                   Tên hiển thị
                 </label>
                 <div className="relative group">
-                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)] group-focus-within:text-[var(--primary)] transition-colors" />
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)] group-focus-within:text-[var(--primary)] transition-colors" />
                   <input
                     type="text"
                     placeholder="John Doe"
                     value={formData.displayName}
                     onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-                    className="input-field pl-10 text-sm py-3"
+                    className="input-field !pl-12 text-sm py-3"
                   />
                 </div>
               </div>
@@ -203,7 +205,7 @@ export default function RegisterPage() {
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   required
-                  className="input-field pl-12 pr-12"
+                  className="input-field !pl-14 pr-12"
                 />
                 <button
                   type="button"
@@ -253,7 +255,7 @@ export default function RegisterPage() {
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                   required
-                  className={`input-field pl-12 pr-12 ${
+                  className={`input-field !pl-14 pr-12 ${
                     formData.confirmPassword && formData.password === formData.confirmPassword 
                       ? "border-[var(--success)] focus:border-[var(--success)]" 
                       : ""

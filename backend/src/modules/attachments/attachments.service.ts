@@ -4,21 +4,53 @@ import { R2Service } from '../../shared/services/r2.service';
 import { ConversationsService } from '../conversations/conversations.service';
 
 const ALLOWED_MIME_TYPES = [
+  // Images
   'image/jpeg',
   'image/png',
   'image/gif',
   'image/webp',
+  'image/svg+xml',
+  'image/bmp',
+  'image/tiff',
+  // Videos
   'video/mp4',
   'video/quicktime',
   'video/webm',
+  'video/avi',
+  'video/x-msvideo',
+  'video/x-matroska',
+  // Audio
   'audio/mpeg',
   'audio/wav',
   'audio/webm',
+  'audio/ogg',
+  'audio/mp4',
+  'audio/aac',
+  // Documents
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  // Text files
+  'text/plain',
+  'text/csv',
+  'text/html',
+  'text/css',
+  'text/javascript',
+  'text/markdown',
+  'text/x-markdown',
+  'application/json',
+  'application/xml',
+  // Archives
+  'application/zip',
+  'application/x-rar-compressed',
+  'application/x-7z-compressed',
+  'application/gzip',
+  // Other common types
+  'application/octet-stream', // Generic binary
 ];
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB

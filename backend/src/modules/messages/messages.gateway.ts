@@ -113,6 +113,10 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
       tempId?: string;
       nonce?: string;
       ephemeralPublicKey?: string;
+      attachments?: Array<{
+        attachmentId: string;
+        encryptedFileKey: string;
+      }>;
     },
   ) {
     try {
@@ -123,6 +127,7 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
         sessionVersion: data.sessionVersion,
         ratchetStep: data.ratchetStep,
         replyToMessageId: data.replyToMessageId,
+        attachments: data.attachments,
       });
 
       // Send to all participants

@@ -6,14 +6,12 @@ import { useConversationsStore } from "@/stores/conversationsStore";
 import { conversationsApi, usersApi, User, Conversation } from "@/lib/api";
 import {
   Search,
-  Settings,
   MessageSquare,
   Phone,
   Users,
   User as UserIcon,
   X,
   Loader2,
-  PenSquare,
   LogOut,
   Undo2,
 } from "lucide-react";
@@ -184,68 +182,65 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
   return (
     <div className="flex flex-col w-full h-full bg-[var(--sidebar-bg)] overflow-hidden relative border-r border-[var(--border)]">
       {/* 1. Header Section */}
-      <div className="p-5 flex-shrink-0 space-y-5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <div className="relative group cursor-pointer">
-              <div className="avatar-ring w-12 h-12 transition-transform duration-300 group-hover:scale-105">
+      <div className="p-4 md:p-5 flex-shrink-0 space-y-4 md:space-y-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="relative group cursor-pointer flex-shrink-0">
+              <div className="avatar-ring w-10 h-10 md:w-12 md:h-12 transition-transform duration-300 group-hover:scale-105">
                 <div className="w-full h-full rounded-full bg-[var(--sidebar-bg)] overflow-hidden">
                   {user?.avatar_url ? (
                     <img src={user.avatar_url} alt="" className="w-full h-full object-cover" />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center text-white font-black text-lg bg-gradient-to-br from-[var(--primary)] to-[var(--accent)]">
+                    <div className="w-full h-full flex items-center justify-center text-white font-black text-base md:text-lg bg-gradient-to-br from-[var(--primary)] to-[var(--accent)]">
                       {user?.display_name?.[0] || user?.username?.[0] || "?"}
                     </div>
                   )}
                 </div>
               </div>
-              <div className="online-indicator absolute -bottom-0.5 -right-0.5" />
+              <div className="online-indicator absolute bottom-0 right-0" />
             </div>
-            <div>
-              <h1 className="text-xl font-black text-white tracking-tight">Đoạn chat</h1>
+            <div className="min-w-0">
+              <h1 className="text-lg md:text-xl font-black text-white tracking-tight truncate">Đoạn chat</h1>
               <div className="flex items-center gap-1.5">
-                <div className="relative">
+                <div className="relative flex items-center justify-center">
                   <div className="w-1.5 h-1.5 rounded-full bg-[var(--success)]" />
-                  <div className="absolute inset-0 rounded-full bg-[var(--success)] animate-ping opacity-75" />
+                  <div className="absolute w-3 h-3 rounded-full bg-[var(--success)]/40 animate-ping" />
                 </div>
-                <p className="text-[11px] font-bold text-[var(--text-muted)] uppercase tracking-widest">Trực tuyến</p>
+                <p className="text-[9px] md:text-[10px] font-bold text-[var(--success)] uppercase tracking-widest">Trực tuyến</p>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button className="p-2.5 bg-white/5 rounded-xl hover:bg-white/10 transition-all text-[var(--text-secondary)] hover:text-white">
-              <Settings size={20} />
-            </button>
+          <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
             <button 
               onClick={handleLogout}
-              className="p-2.5 bg-[var(--danger)]/10 rounded-xl hover:bg-[var(--danger)]/20 transition-all text-[var(--danger)]/70 hover:text-[var(--danger)]"
+              className="p-2 md:p-2.5 bg-[var(--danger)]/10 rounded-xl hover:bg-[var(--danger)]/20 transition-all text-[var(--danger)]/70 hover:text-[var(--danger)]"
               title="Đăng xuất"
             >
-              <LogOut size={20} />
+              <LogOut size={18} />
             </button>
           </div>
         </div>
 
         {/* Search Bar */}
         <div className="relative group">
-          <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
-            <Search size={18} className="text-[var(--text-muted)] group-focus-within:text-[var(--primary)] transition-colors" />
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none transition-all group-focus-within:scale-110">
+            <Search size={16} className="text-[var(--text-muted)] group-focus-within:text-[var(--primary)] transition-colors" />
           </div>
           <input
             type="text"
             placeholder="Tìm kiếm bạn bè..."
-            className="input-field pl-12 pr-12"
+            className="input-field !pl-12 pr-10 py-3 text-sm bg-black/40 border-white/5 group-focus-within:bg-black/60 transition-all duration-300 rounded-[18px]"
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
           />
           {searchQuery && (
-            <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-white/5 rounded-lg transition-colors">
-              <X size={16} className="text-[var(--text-muted)]" />
+            <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 hover:bg-white/10 rounded-lg transition-colors active:scale-90">
+              <X size={14} className="text-[var(--text-muted)] hover:text-white" />
             </button>
           )}
           {isSearching && (
-            <div className="absolute right-12 top-1/2 -translate-y-1/2">
-              <Loader2 size={16} className="text-[var(--primary)] animate-spin" />
+            <div className="absolute right-10 top-1/2 -translate-y-1/2">
+              <Loader2 size={14} className="text-[var(--primary)] animate-spin" />
             </div>
           )}
         </div>
@@ -253,8 +248,24 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
 
       {/* 2. Scrollable Content */}
       <div className="flex-1 overflow-y-auto no-scrollbar pb-28">
-        {/* Search Results */}
-        {searchQuery && (
+        {/* Feature Under Development */}
+        {activeTab !== "messages" && (
+          <div className="flex flex-col items-center justify-center h-full px-6 py-20 text-center">
+            <div className="w-20 h-20 md:w-24 md:h-24 bg-white/5 rounded-3xl flex items-center justify-center mb-6 border border-[var(--border)]">
+              <Loader2 size={36} className="text-[var(--primary)] animate-spin" />
+            </div>
+            <h3 className="text-white font-black text-xl md:text-2xl mb-2">Tính năng đang phát triển</h3>
+            <p className="text-[13px] md:text-[14px] font-medium text-[var(--text-muted)] leading-relaxed max-w-md">
+              Tính năng này đang được chúng tôi phát triển và sẽ sớm có mặt trong phiên bản tương lai.
+            </p>
+          </div>
+        )}
+
+        {/* Messages Tab Content */}
+        {activeTab === "messages" && (
+          <>
+            {/* Search Results */}
+            {searchQuery && (
           <div className="px-3 animate-in">
             <p className="px-3 text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] mb-4">Kết quả tìm kiếm</p>
             {isSearching ? (
@@ -284,7 +295,7 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
                           )}
                         </div>
                       </div>
-                      {u.is_online && <div className="online-indicator absolute -bottom-0.5 -right-0.5" />}
+                      {u.is_online && <div className="online-indicator absolute bottom-0 right-0" />}
                     </div>
                     <div className="flex-1 min-w-0 text-left">
                       <p className="font-bold text-white truncate group-hover:text-[var(--primary)] transition-colors">
@@ -311,11 +322,11 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
                 <p className="text-xs font-medium text-[var(--text-muted)]">Hãy thử tìm bằng tên người dùng chính xác hơn.</p>
               </div>
             )}
-          </div>
-        )}
+            </div>
+            )}
 
-        {/* Active Users - Horizontal Scroll */}
-        {!searchQuery && onlineUsers.length > 0 && (
+            {/* Active Users - Horizontal Scroll */}
+            {!searchQuery && onlineUsers.length > 0 && (
           <div className="py-4 border-b border-[var(--border)]">
             <p className="px-5 text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em] mb-4">Đang hoạt động</p>
             <div className="flex gap-5 overflow-x-auto px-5 no-scrollbar">
@@ -327,8 +338,8 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
                   style={{ animationDelay: `${index * 50}ms` }}
                 >
                   <div className="relative">
-                    <div className="avatar-ring-online w-[60px] h-[60px] transition-transform group-hover:scale-105">
-                      <div className="w-full h-full rounded-full bg-[var(--sidebar-bg)] flex items-center justify-center overflow-hidden">
+                    <div className="avatar-ring-online w-[64px] h-[64px] transition-transform group-hover:scale-105 shadow-xl shadow-[var(--success-glow)]">
+                      <div className="w-full h-full rounded-full bg-[var(--sidebar-bg)] flex items-center justify-center overflow-hidden border-2 border-transparent">
                         {u.avatar_url ? (
                           <img src={u.avatar_url} alt="" className="w-full h-full object-cover" />
                         ) : (
@@ -338,7 +349,7 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
                         )}
                       </div>
                     </div>
-                    <div className="online-indicator absolute -bottom-0.5 -right-0.5 w-4 h-4" />
+                    <div className="online-indicator-lg absolute bottom-0.5 right-0.5" />
                   </div>
                   <span className="text-[11px] font-bold text-white truncate max-w-[64px] tracking-tight">
                     {u.display_name?.split(' ')[0] || u.username}
@@ -347,18 +358,15 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
               ))}
             </div>
           </div>
-        )}
+            )}
 
-        {/* Recent Conversations */}
-        {!searchQuery && (
+            {/* Recent Conversations */}
+            {!searchQuery && (
           <div className="mt-6">
             <div className="flex items-center justify-between px-5 mb-4">
               <p className="text-[10px] font-black text-[var(--text-muted)] uppercase tracking-[0.2em]">
                 Gần đây {conversations.length > 0 && `(${conversations.length})`}
               </p>
-              <button className="p-1 text-[var(--text-muted)] hover:text-white transition-colors">
-                <PenSquare size={16} />
-              </button>
             </div>
             
             <div className="px-2 space-y-1">
@@ -390,12 +398,14 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
               )}
             </div>
           </div>
+            )}
+          </>
         )}
       </div>
 
       {/* Undo Delete Toast */}
       {deletedConversation && (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-[90%] z-50 animate-in">
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 w-[90%] z-[60] animate-in">
           <div className="glass-card rounded-2xl p-4 flex items-center justify-between gap-3 shadow-2xl border border-[var(--border)]">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-[var(--danger)]/10 flex items-center justify-center flex-shrink-0">
@@ -420,8 +430,8 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
       )}
 
       {/* 3. Bottom Navigation - Glassmorphism */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 w-[90%] flex-shrink-0 z-40">
-        <div className="glass-card rounded-3xl px-2 py-2 flex items-center justify-between shadow-2xl">
+      <div className="absolute bottom-4 md:bottom-6 left-1/2 -translate-x-1/2 w-[92%] md:w-[90%] flex-shrink-0 z-40">
+        <div className="glass-card rounded-[24px] md:rounded-3xl px-2 py-1.5 md:py-2 flex items-center justify-between shadow-2xl border-white/10">
           {[
             { id: "messages", icon: MessageSquare, label: "Chat" },
             { id: "calls", icon: Phone, label: "Gọi" },
@@ -431,7 +441,7 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
             <button 
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)} 
-              className={`relative flex flex-col items-center justify-center gap-1 h-14 w-16 rounded-2xl transition-all duration-300 ${
+              className={`relative flex flex-col items-center justify-center gap-1 h-12 md:h-14 w-14 md:w-16 rounded-xl md:rounded-2xl transition-all duration-300 ${
                 activeTab === tab.id 
                   ? "text-white" 
                   : "text-[var(--text-muted)] hover:text-white hover:bg-white/5"
@@ -439,19 +449,19 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
             >
               {/* Active background */}
               {activeTab === tab.id && (
-                <div className="absolute inset-0 bg-gradient-to-b from-[var(--primary)]/30 to-transparent rounded-2xl" />
+                <div className="absolute inset-0 bg-gradient-to-b from-[var(--primary)]/25 to-transparent rounded-xl md:rounded-2xl" />
               )}
               
-              {/* Active dot */}
+              {/* Active indicator */}
               {activeTab === tab.id && (
-                <div className="absolute -top-1 w-1.5 h-1.5 bg-[var(--primary)] rounded-full shadow-lg shadow-[var(--primary)]" />
+                <div className="absolute -top-1 w-1 h-1 md:w-1.5 md:h-1.5 bg-[var(--primary)] rounded-full shadow-lg shadow-[var(--primary)]" />
               )}
               
               <tab.icon 
-                size={22} 
-                className={`relative z-10 ${activeTab === tab.id ? "drop-shadow-[0_0_8px_var(--primary-glow)]" : ""}`} 
+                size={activeTab === tab.id ? 22 : 20} 
+                className={`relative z-10 transition-all duration-300 ${activeTab === tab.id ? "drop-shadow-[0_0_10px_var(--primary-glow)]" : ""}`} 
               />
-              <span className="relative z-10 text-[9px] font-black uppercase tracking-wider">{tab.label}</span>
+              <span className="relative z-10 text-[8px] md:text-[9px] font-black uppercase tracking-wider">{tab.label}</span>
             </button>
           ))}
         </div>

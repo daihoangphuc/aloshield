@@ -18,7 +18,7 @@ import { Loader2 } from "lucide-react";
 export default function ChatPage() {
   const router = useRouter();
   const { user, setUser, setLoading: setAuthLoading } = useAuthStore();
-  const { activeConversationId, setConversations } = useConversationsStore();
+  const { activeConversationId, setConversations, setActiveConversation } = useConversationsStore();
   const { currentCall, incomingCall } = useCallStore();
   const [isMobile, setIsMobile] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
@@ -133,7 +133,11 @@ export default function ChatPage() {
         {activeConversationId ? (
           <ChatWindow
             conversationId={activeConversationId}
-            onBack={() => setShowSidebar(true)}
+            onBack={() => {
+              // ✅ Clear activeConversationId when user goes back
+              setActiveConversation(null);
+              setShowSidebar(true);
+            }}
             isMobile={isMobile}
           />
         ) : (

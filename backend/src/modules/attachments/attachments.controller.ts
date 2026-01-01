@@ -57,11 +57,15 @@ export class AttachmentsController {
       req.user.id,
     );
 
-    res.setHeader('Content-Type', 'application/octet-stream');
+    // Use the actual MIME type from database, fallback to octet-stream if not available
+    const contentType = mimeType || 'application/octet-stream';
+    
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
     res.send(buffer);
   }
 }
+
 
 
 

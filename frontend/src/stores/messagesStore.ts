@@ -107,11 +107,29 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   updateMessageStatus: (messageId, status) =>
     set((state) => {
       const newMessages = { ...state.messages };
+      let found = false;
 
       for (const conversationId in newMessages) {
-        newMessages[conversationId] = newMessages[conversationId].map((msg) =>
-          msg.id === messageId ? { ...msg, status } : msg
-        );
+        newMessages[conversationId] = newMessages[conversationId].map((msg) => {
+          if (msg.id === messageId) {
+            found = true;
+            // Only update if status is "higher" (sent < delivered < read)
+            const statusOrder = { sent: 1, delivered: 2, read: 3 };
+            const currentOrder = statusOrder[msg.status as keyof typeof statusOrder] || 0;
+            const newOrder = statusOrder[status];
+            
+            if (newOrder >= currentOrder) {
+              console.log(`📝 Message ${messageId} status updated: ${msg.status} -> ${status}`);
+              return { ...msg, status };
+            }
+            return msg;
+          }
+          return msg;
+        });
+      }
+
+      if (!found) {
+        console.log(`⚠️ Message ${messageId} not found in store for status update`);
       }
 
       return { messages: newMessages };

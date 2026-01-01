@@ -35,21 +35,49 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
   setActiveConversation: (id) => set({ activeConversationId: id }),
 
   updateLastMessage: (conversationId, message) =>
-    set((state) => ({
-      conversations: state.conversations.map((conv) =>
-        conv.id === conversationId
-          ? {
-              ...conv,
-              last_message: message,
-              updated_at: message.created_at,
-              unread_count:
-                state.activeConversationId === conversationId
-                  ? 0
-                  : conv.unread_count + 1,
-            }
-          : conv
-      ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
-    })),
+    set((state) => {
+      // Get current user ID to check if this is my message
+      const myUserId = typeof window !== 'undefined' 
+        ? JSON.parse(localStorage.getItem('auth-storage') || '{}')?.state?.user?.id 
+        : null;
+      
+      const isSentByMe = message.sender_id === myUserId;
+      const isInActiveConversation = state.activeConversationId === conversationId;
+      
+      // ✅ CRITICAL: For own NEW messages, ALWAYS start with "sent" status
+      // Check if this is a new message (different ID from current last_message)
+      const currentConv = state.conversations.find(c => c.id === conversationId);
+      const isNewMessage = !currentConv?.last_message || currentConv.last_message.id !== message.id;
+      
+      // Determine status: for own new messages, always "sent". For others, use message.status
+      let messageStatus = message.status || "sent";
+      if (isSentByMe && isNewMessage) {
+        // This is a NEW message from me - MUST start as "sent" regardless of what message.status says
+        // This prevents delayed "message:read" events from previous messages from affecting new messages
+        messageStatus = "sent";
+      }
+      
+      return {
+        conversations: state.conversations.map((conv) =>
+          conv.id === conversationId
+            ? {
+                ...conv,
+                last_message: {
+                  ...message,
+                  status: messageStatus,
+                },
+                updated_at: message.created_at,
+                // Only increment unread count if:
+                // 1. Message is NOT from me (received from someone else)
+                // 2. AND I'm NOT currently viewing this conversation
+                unread_count: (!isSentByMe && !isInActiveConversation)
+                  ? (Number(conv.unread_count) || 0) + 1
+                  : (isInActiveConversation ? 0 : Number(conv.unread_count) || 0),
+              }
+            : conv
+        ).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
+      };
+    }),
 
   updateUnreadCount: (conversationId, count) =>
     set((state) => ({
@@ -59,20 +87,28 @@ export const useConversationsStore = create<ConversationsState>((set, get) => ({
     })),
 
   updateMessageStatus: (messageId, status) =>
-    set((state) => ({
-      conversations: state.conversations.map((conv) => {
-        if (conv.last_message?.id === messageId) {
-          return {
-            ...conv,
-            last_message: {
-              ...conv.last_message,
-              status,
-            },
-          };
-        }
-        return conv;
-      }),
-    })),
+    set((state) => {
+      console.log(`📝 Updating message status: ${messageId} -> ${status}`);
+      return {
+        conversations: state.conversations.map((conv) => {
+          // ✅ Only update if last_message.id EXACTLY matches messageId
+          // This prevents race conditions where delayed read events update wrong messages
+          if (conv.last_message?.id === messageId) {
+            console.log(`✅ Found conversation with last_message id: ${messageId}, updating status to ${status}`);
+            return {
+              ...conv,
+              last_message: {
+                ...conv.last_message,
+                status,
+              },
+            };
+          } else if (conv.last_message?.id) {
+            console.log(`⏭️ Skipping status update - last_message.id (${conv.last_message.id}) !== messageId (${messageId})`);
+          }
+          return conv;
+        }),
+      };
+    }),
 
   setTyping: (conversationId, userId, isTyping) =>
     set((state) => {
