@@ -169,6 +169,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     setMessages,
     addMessage,
     setHasMore,
+    deleteMessage,
   } = useMessagesStore();
   const { initiateCall, initializePeerConnection, createOffer, iceServers } = useCallStore();
 
@@ -366,6 +367,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       ratchet_step: 0,
       created_at: new Date().toISOString(),
       sender: user || undefined,
+      status: "sent", // ✅ Show "sent" status immediately for smooth UX
     };
 
     addMessage(tempMessage);
@@ -397,6 +399,10 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       }
     } catch (error) {
       console.error("Failed to send message:", error);
+      // Remove temp message on error
+      deleteMessage(conversationId, tempId);
+      // Optionally show error to user
+      alert("Không thể gửi tin nhắn. Vui lòng thử lại.");
     } finally {
       setIsSending(false);
       // Focus back to textarea after sending
@@ -607,6 +613,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     if (!selectedFile || isUploading || !otherParticipant) return;
 
     setIsUploading(true);
+    const tempId = `temp-${Date.now()}`;
 
     try {
       // Upload file to R2
@@ -623,8 +630,6 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       if (selectedFile.type.startsWith("image/")) contentType = "image";
       else if (selectedFile.type.startsWith("video/")) contentType = "video";
       else if (selectedFile.type.startsWith("audio/")) contentType = "audio";
-
-      const tempId = `temp-${Date.now()}`;
       const tempMessage: Message = {
         id: tempId,
         conversation_id: conversationId,
@@ -636,6 +641,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         ratchet_step: 0,
         created_at: new Date().toISOString(),
         sender: user || undefined,
+        status: "sent", // ✅ Show "sent" status immediately for smooth UX
         attachments: [{
           id: uploadResult.attachmentId,
           r2_key: uploadResult.r2Key,
@@ -674,6 +680,8 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       clearSelectedFile();
     } catch (error) {
       console.error("Failed to send file:", error);
+      // Remove temp message on error
+      deleteMessage(conversationId, tempId);
       alert("Không thể gửi tệp. Vui lòng thử lại.");
     } finally {
       setIsUploading(false);
@@ -1244,10 +1252,13 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
                       <span>{formatTime(msg.created_at)}</span>
                       {isEdited && !isDeleted && <span>(đã chỉnh sửa)</span>}
                       {isMe && !isDeleted && (
-                        msg.id.startsWith("temp-") ? (
+                        // Show spinner only if temp message doesn't have status yet (shouldn't happen now, but keep as fallback)
+                        msg.id.startsWith("temp-") && !msg.status ? (
                           <Loader2 size={12} className="animate-spin" />
                         ) : msg.status === "read" ? (
                           <CheckCheck size={14} className="text-[var(--primary)]" />
+                        ) : msg.status === "sent" || msg.status === "delivered" ? (
+                          <Check size={14} className="text-[var(--text-muted)]" />
                         ) : (
                           <Check size={14} className="text-[var(--text-muted)]" />
                         )
