@@ -119,7 +119,7 @@ export default function ChatPage() {
 
   if (isInitializing || !isInitialized) {
     return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-[var(--background)]">
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-[var(--background)]" suppressHydrationWarning>
         <Loader2 className="w-10 h-10 animate-spin text-[var(--blue-accent)] mb-4" />
         <p className="text-[var(--text-secondary)]">Đang chuẩn bị môi trường an toàn...</p>
       </div>
@@ -127,7 +127,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-screen w-full flex bg-[var(--background)] overflow-hidden">
+    <div className="h-screen w-full flex bg-[var(--background)] overflow-hidden" suppressHydrationWarning>
       {/* Sidebar Container */}
       <aside 
         className={`${

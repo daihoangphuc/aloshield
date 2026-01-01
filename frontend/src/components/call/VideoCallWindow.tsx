@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useCallStore } from "@/stores/callStore";
+import { useConversationsStore } from "@/stores/conversationsStore";
+import { conversationsApi } from "@/lib/api";
 import { 
   Mic, 
   MicOff, 
@@ -16,22 +19,27 @@ import {
 } from "lucide-react";
 
 export function VideoCallWindow() {
+  const router = useRouter();
   const { 
     currentCall, 
     localStream, 
     remoteStream, 
     isMuted, 
-    isVideoOff, 
+    isVideoOff,
+    isMinimized,
     toggleMute,
     toggleVideo,
+    toggleMinimize,
     endCall 
   } = useCallStore();
+  const { conversations, setActiveConversation } = useConversationsStore();
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null); // For audio calls
   const remoteVideoAudioRef = useRef<HTMLAudioElement>(null); // For video calls - separate audio element
   const [timer, setTimer] = useState("00:00");
+  const [showControls, setShowControls] = useState(true);
 
   useEffect(() => {
     console.log("🎥 Local stream updated:", localStream);
@@ -111,6 +119,9 @@ export function VideoCallWindow() {
 
   if (!currentCall) return null;
 
+  // Don't render full screen if minimized - minimized view is handled in ChatWindow
+  if (isMinimized) return null;
+
   return (
     <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col animate-in">
       {/* Hidden audio element for audio calls */}
@@ -129,8 +140,11 @@ export function VideoCallWindow() {
         muted={false}
         className="hidden" 
       />
-      {/* REMOTE VIDEO (FULL SCREEN) */}
-      <div className="absolute inset-0 overflow-hidden">
+      {/* REMOTE VIDEO (FULL SCREEN) - Click to toggle controls */}
+      <div 
+        className="absolute inset-0 overflow-hidden cursor-pointer"
+        onClick={() => setShowControls(!showControls)}
+      >
         {remoteStream && currentCall.callType === "video" ? (
           <video
             ref={remoteVideoRef}
@@ -171,10 +185,42 @@ export function VideoCallWindow() {
       </div>
 
       {/* TOP HEADER */}
-      <div className="relative flex items-center justify-between p-6 bg-gradient-to-b from-black/80 to-transparent">
+      <div 
+        className={`relative flex items-center justify-between p-6 bg-gradient-to-b from-black/80 to-transparent transition-opacity duration-300 ${
+          showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      >
         <button 
-          onClick={endCall} 
+          onClick={async (e) => {
+            e.stopPropagation();
+            // Minimize the call and navigate to chat (same as chat button)
+            toggleMinimize();
+            
+            // Find or create conversation with recipient
+            if (currentCall?.recipientId) {
+              // Find existing conversation
+              const existingConv = conversations.find(conv => 
+                conv.participants?.some(p => (p.user?.id || p.user_id) === currentCall.recipientId)
+              );
+              
+              if (existingConv) {
+                setActiveConversation(existingConv.id);
+              } else {
+                // Create new conversation
+                try {
+                  const newConv = await conversationsApi.create(currentCall.recipientId);
+                  setActiveConversation(newConv.id);
+                } catch (error) {
+                  console.error("Failed to create conversation:", error);
+                }
+              }
+            }
+            
+            // Navigate to chat page
+            router.push("/chat");
+          }}
           className="p-3 glass-card rounded-full hover:bg-white/10 transition-all"
+          title="Quay về chat"
         >
           <ChevronDown className="text-white w-6 h-6" />
         </button>
@@ -193,9 +239,12 @@ export function VideoCallWindow() {
         </button>
       </div>
 
-      {/* LOCAL VIDEO (FLOATING) - Only show for video calls */}
+      {/* LOCAL VIDEO (FLOATING) - Only show for video calls, always visible */}
       {currentCall.callType === "video" && (
-        <div className="absolute top-24 right-6 w-32 h-48 md:w-40 md:h-60 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black animate-in">
+        <div 
+          className="absolute top-24 right-6 w-32 h-48 md:w-40 md:h-60 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black animate-in"
+          onClick={(e) => e.stopPropagation()}
+        >
           {localStream && !isVideoOff ? (
             <video
               ref={localVideoRef}
@@ -218,12 +267,19 @@ export function VideoCallWindow() {
       )}
 
       {/* BOTTOM CONTROLS */}
-      <div className="mt-auto relative p-8 bg-gradient-to-t from-black/90 to-transparent flex flex-col items-center">
-        <div className="flex items-center gap-4 md:gap-6 glass-card p-4 rounded-[32px] shadow-2xl">
+      <div 
+        className={`mt-auto relative p-8 bg-gradient-to-t from-black/90 to-transparent flex flex-col items-center transition-opacity duration-300 ${
+          showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="flex items-center gap-2 md:gap-3 glass-card p-2 md:p-3 rounded-2xl md:rounded-[24px] shadow-2xl max-w-[95%]">
           {/* Mute button */}
           <button 
-            onClick={toggleMute}
-            className={`relative p-4 rounded-full transition-all duration-300 ${
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleMute();
+            }}
+            className={`relative p-2.5 md:p-3 rounded-full transition-all duration-300 ${
               isMuted 
                 ? "bg-[var(--danger)]/20 text-[var(--danger)] ring-2 ring-[var(--danger)]/30" 
                 : "bg-white/10 text-white hover:bg-white/20"
@@ -232,39 +288,79 @@ export function VideoCallWindow() {
             {isMuted && (
               <div className="absolute inset-0 rounded-full animate-ping bg-[var(--danger)]/20" />
             )}
-            {isMuted ? <MicOff className="w-6 h-6 relative z-10" /> : <Mic className="w-6 h-6" />}
+            {isMuted ? <MicOff className="w-5 h-5 md:w-6 md:h-6 relative z-10" /> : <Mic className="w-5 h-5 md:w-6 md:h-6" />}
           </button>
 
           {/* Video toggle button */}
           <button 
-            onClick={toggleVideo}
-            className={`relative p-4 rounded-full transition-all duration-300 ${
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleVideo();
+            }}
+            className={`relative p-2.5 md:p-3 rounded-full transition-all duration-300 ${
               isVideoOff 
                 ? "bg-[var(--danger)]/20 text-[var(--danger)] ring-2 ring-[var(--danger)]/30" 
                 : "bg-white/10 text-white hover:bg-white/20"
             }`}
           >
-            {isVideoOff ? <VideoOff className="w-6 h-6" /> : <Video className="w-6 h-6" />}
+            {isVideoOff ? <VideoOff className="w-5 h-5 md:w-6 md:h-6" /> : <Video className="w-5 h-5 md:w-6 md:h-6" />}
           </button>
 
-          {/* Chat button */}
-          <button className="p-4 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all relative">
-            <MessageSquare className="w-6 h-6" />
-            <div className="absolute top-3.5 right-3.5 w-2 h-2 bg-[var(--primary)] rounded-full" />
+          {/* Chat button - Navigate to chat */}
+          <button 
+            onClick={async (e) => {
+              e.stopPropagation();
+              // Minimize the call
+              toggleMinimize();
+              
+              // Find or create conversation with recipient
+              if (currentCall?.recipientId) {
+                // Find existing conversation
+                const existingConv = conversations.find(conv => 
+                  conv.participants?.some(p => (p.user?.id || p.user_id) === currentCall.recipientId)
+                );
+                
+                if (existingConv) {
+                  setActiveConversation(existingConv.id);
+                } else {
+                  // Create new conversation
+                  try {
+                    const newConv = await conversationsApi.create(currentCall.recipientId);
+                    setActiveConversation(newConv.id);
+                  } catch (error) {
+                    console.error("Failed to create conversation:", error);
+                  }
+                }
+              }
+              
+              // Navigate to chat page
+              router.push("/chat");
+            }}
+            className="p-2.5 md:p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all relative"
+            title="Mở chat"
+          >
+            <MessageSquare className="w-5 h-5 md:w-6 md:h-6" />
+            <div className="absolute top-2.5 right-2.5 md:top-3.5 md:right-3.5 w-1.5 h-1.5 md:w-2 md:h-2 bg-[var(--primary)] rounded-full" />
           </button>
 
           {/* Volume button */}
-          <button className="p-4 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all">
-            <Volume2 className="w-6 h-6" />
+          <button 
+            onClick={(e) => e.stopPropagation()}
+            className="p-2.5 md:p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-all"
+          >
+            <Volume2 className="w-5 h-5 md:w-6 md:h-6" />
           </button>
 
           {/* End call button */}
           <button 
-            onClick={endCall}
-            className="relative p-5 bg-gradient-to-br from-[var(--danger)] to-[#e11d48] rounded-full transition-all shadow-xl shadow-[var(--danger)]/40 hover:shadow-[var(--danger)]/60 active:scale-90 group"
+            onClick={(e) => {
+              e.stopPropagation();
+              endCall();
+            }}
+            className="relative p-3 md:p-4 bg-gradient-to-br from-[var(--danger)] to-[#e11d48] rounded-full transition-all shadow-xl shadow-[var(--danger)]/40 hover:shadow-[var(--danger)]/60 active:scale-90 group"
           >
             <div className="absolute inset-0 rounded-full bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity" />
-            <PhoneOff className="w-7 h-7 text-white relative z-10" />
+            <PhoneOff className="w-5 h-5 md:w-6 md:h-6 text-white relative z-10" />
           </button>
         </div>
         

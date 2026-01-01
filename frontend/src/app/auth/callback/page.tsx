@@ -141,7 +141,7 @@ function AuthCallbackContent() {
 
   if (status === "error") {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[var(--background)]">
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-[var(--background)]" suppressHydrationWarning>
         <div className="w-full max-w-md bg-[#111b21] rounded-3xl p-8 border border-white/5 shadow-2xl">
           <div className="flex flex-col items-center text-center">
             <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
@@ -172,7 +172,7 @@ function AuthCallbackContent() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--background)]">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[var(--background)]" suppressHydrationWarning>
       <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" />
       <p className="text-[var(--text-secondary)] font-medium">Đang xác thực...</p>
       <p className="text-[var(--text-muted)] text-sm mt-2">Vui lòng đợi trong giây lát</p>
@@ -184,7 +184,7 @@ export default function AuthCallback() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex flex-col items-center justify-center">
+        <div className="min-h-screen flex flex-col items-center justify-center" suppressHydrationWarning>
           <Loader2 className="w-8 h-8 animate-spin text-blue-500 mb-4" />
           <p className="text-[var(--muted)]">Đang tải...</p>
         </div>

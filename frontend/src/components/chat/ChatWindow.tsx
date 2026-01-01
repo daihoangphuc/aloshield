@@ -33,12 +33,263 @@ import {
   Play,
   Reply,
   Layers,
+  Maximize2,
+  PhoneOff,
 } from "lucide-react";
 
 interface ChatWindowProps {
   conversationId: string;
   onBack: () => void;
   isMobile: boolean;
+}
+
+// Component for minimized audio call - Banner with return button
+function MinimizedAudioCall({
+  recipientName,
+  onMaximize,
+  onEndCall,
+}: {
+  recipientName: string;
+  onMaximize: () => void;
+  onEndCall: () => void;
+}) {
+  const { callDuration } = useCallStore();
+  const [timer, setTimer] = useState("00:00");
+
+  useEffect(() => {
+    const start = Date.now() - callDuration * 1000;
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - start) / 1000);
+      const mins = Math.floor(elapsed / 60).toString().padStart(2, "0");
+      const secs = (elapsed % 60).toString().padStart(2, "0");
+      setTimer(`${mins}:${secs}`);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [callDuration]);
+
+  return (
+    <div 
+      className="fixed top-0 left-0 right-0 z-[90] bg-gradient-to-r from-[var(--primary)]/90 to-[var(--accent)]/90 backdrop-blur-xl border-b border-white/10 shadow-2xl"
+      style={{
+        top: 'env(safe-area-inset-top, 0px)',
+        paddingTop: 'max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px)))',
+        paddingBottom: '0.75rem',
+        paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
+        paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+      }}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+            <Phone className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-semibold text-sm truncate">{recipientName}</p>
+            <p className="text-white/80 text-xs font-mono">{timer} • Encrypted</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onMaximize();
+            }}
+            className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-white text-sm font-medium transition-colors"
+          >
+            Trở lại cuộc gọi
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEndCall();
+            }}
+            className="p-2 bg-[var(--danger)]/80 hover:bg-[var(--danger)] rounded-lg transition-colors"
+            title="Kết thúc cuộc gọi"
+          >
+            <PhoneOff size={18} className="text-white" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Component for minimized video call - Picture in Picture
+function MinimizedVideoCall({
+  remoteStream,
+  localStream,
+  recipientName,
+  onMaximize,
+  onEndCall,
+}: {
+  remoteStream: MediaStream | null;
+  localStream: MediaStream | null;
+  recipientName: string;
+  onMaximize: () => void;
+  onEndCall: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const videoEl = videoRef.current;
+    if (!videoEl) return;
+
+    // Prioritize remoteStream, fallback to localStream
+    const streamToUse = remoteStream || localStream;
+    
+    if (streamToUse) {
+      console.log("🎥 MinimizedVideoCall: Setting stream", streamToUse.id, "tracks:", streamToUse.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })));
+      
+      // Store current play promise to avoid interruption
+      let playPromise: Promise<void> | null = null;
+      
+      // Set stream
+      videoEl.srcObject = streamToUse;
+      videoEl.muted = !remoteStream; // Mute if using localStream
+      
+      // Wait for metadata before playing to avoid interruption
+      const handleCanPlay = () => {
+        if (videoEl && !playPromise) {
+          playPromise = videoEl.play().catch(e => {
+            if (e.name !== 'AbortError') {
+              console.error("Error playing minimized video:", e);
+              // Retry play only if not interrupted
+              setTimeout(() => {
+                if (videoEl && videoEl.readyState >= 2) {
+                  playPromise = videoEl.play().catch(err => {
+                    if (err.name !== 'AbortError') {
+                      console.error("Retry play failed:", err);
+                    }
+                    playPromise = null;
+                  });
+                }
+              }, 100);
+            }
+            playPromise = null;
+          });
+        }
+      };
+      
+      videoEl.addEventListener('canplay', handleCanPlay, { once: true });
+      
+      // If already can play, try immediately
+      if (videoEl.readyState >= 2) {
+        handleCanPlay();
+      }
+      
+      return () => {
+        videoEl.removeEventListener('canplay', handleCanPlay);
+        if (playPromise) {
+          playPromise.catch(() => {}); // Ignore abort errors on cleanup
+        }
+        if (videoEl) {
+          videoEl.srcObject = null;
+        }
+      };
+    } else {
+      videoEl.srcObject = null;
+    }
+
+    return () => {
+      if (videoEl) {
+        videoEl.srcObject = null;
+      }
+    };
+  }, [remoteStream, localStream]);
+
+  // Log stream status for debugging
+  useEffect(() => {
+    console.log("🎥 MinimizedVideoCall render:", {
+      hasRemoteStream: !!remoteStream,
+      hasLocalStream: !!localStream,
+      remoteStreamId: remoteStream?.id,
+      localStreamId: localStream?.id,
+      remoteTracks: remoteStream?.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })),
+      localTracks: localStream?.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })),
+    });
+  }, [remoteStream, localStream]);
+
+  return (
+    <div 
+      className="fixed z-[90] rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl bg-black animate-in cursor-pointer group"
+      style={{
+        top: 'max(5rem, calc(5rem + env(safe-area-inset-top, 0px)))',
+        right: 'max(1rem, calc(1rem + env(safe-area-inset-right, 0px)))',
+        width: '8rem',
+        height: '12rem',
+      }}
+    >
+      {(remoteStream || localStream) ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={!remoteStream}
+          className="w-full h-full object-cover"
+          onLoadedMetadata={() => {
+            console.log("🎥 MinimizedVideoCall: Video metadata loaded");
+          }}
+          onCanPlay={() => {
+            console.log("🎥 MinimizedVideoCall: Video can play");
+          }}
+          onPlay={() => {
+            console.log("🎥 MinimizedVideoCall: Video started playing");
+          }}
+          onPause={() => {
+            console.log("🎥 MinimizedVideoCall: Video paused");
+          }}
+          onError={(e) => {
+            console.error("🎥 MinimizedVideoCall: Video error", e);
+          }}
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center bg-[var(--card)]">
+          <Video className="text-white/20 w-10 h-10" />
+          <p className="text-white/40 text-xs mt-2">Đang chờ video...</p>
+        </div>
+      )}
+      
+      {/* Overlay with controls - show on hover */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent flex flex-col justify-between p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onMaximize();
+          }}
+          className="self-end p-1.5 bg-black/60 rounded-full hover:bg-black/80 transition-colors"
+          title="Phóng to"
+        >
+          <Maximize2 size={14} className="text-white" />
+        </button>
+        <div className="flex items-center justify-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onEndCall();
+            }}
+            className="p-2 bg-[var(--danger)]/80 rounded-full hover:bg-[var(--danger)] transition-colors"
+            title="Kết thúc cuộc gọi"
+          >
+            <PhoneOff size={14} className="text-white" />
+          </button>
+        </div>
+      </div>
+      
+      {/* Always visible name badge */}
+      <div className="absolute bottom-2 left-2 right-2 px-2 py-1 bg-black/60 rounded-lg backdrop-blur-sm">
+        <p className="text-[10px] font-semibold text-white truncate">
+          {recipientName}
+        </p>
+      </div>
+      
+      {/* Click to maximize */}
+      <div 
+        className="absolute inset-0"
+        onClick={onMaximize}
+        title="Click để phóng to"
+      />
+    </div>
+  );
 }
 
 // Component for image message with error handling
@@ -171,7 +422,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     setHasMore,
     deleteMessage,
   } = useMessagesStore();
-  const { initiateCall, initializePeerConnection, createOffer, iceServers } = useCallStore();
+  const { initiateCall, initializePeerConnection, createOffer, iceServers, currentCall, remoteStream, isMinimized, toggleMinimize, endCall, localStream, callDuration } = useCallStore();
 
   const [inputValue, setInputValue] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -985,13 +1236,20 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         ref={messagesContainerRef}
         className="flex-1 min-h-0 overflow-y-auto px-3 md:px-4 space-y-3 no-scrollbar"
         style={isMobile ? {
-          paddingTop: 'calc(1rem + env(safe-area-inset-top, 0px) + 70px)'
+          // Calculate header height properly:
+          // Header top position: env(safe-area-inset-top, 0px)
+          // Header paddingTop: max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) ≈ 0.75rem + env(safe-area-inset-top, 0px) in worst case
+          // Header minHeight: 70px
+          // Header paddingBottom: 0.75rem
+          // Total header height ≈ env(safe-area-inset-top, 0px) + 0.75rem + 70px + 0.75rem = env(safe-area-inset-top, 0px) + 72.5px
+          // Add extra 1rem for spacing
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 72.5px + 1rem)'
         } : {
-          paddingTop: '1rem'
+          paddingTop: 'calc(80px + 1rem)'
         }}
       >
         {/* E2EE Notice */}
-        <div className="flex justify-center mb-4 md:mb-6">
+        <div className="flex justify-center mb-4 md:mb-6 pt-2">
           <div className="glass-card p-3 md:p-4 rounded-2xl max-w-[90%] md:max-w-[85%] flex items-start gap-2 md:gap-3">
             <Lock size={14} className="text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
             <p className="text-[11px] md:text-[12px] text-[var(--text-muted)] leading-relaxed">
@@ -1635,6 +1893,26 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
             setActiveMessageMenu(null);
             setMenuPosition(null);
           }}
+        />
+      )}
+
+      {/* Minimized Video Call - Picture in Picture */}
+      {currentCall && isMinimized && currentCall.callType === "video" && (
+        <MinimizedVideoCall
+          remoteStream={remoteStream}
+          localStream={localStream}
+          recipientName={currentCall.recipientName}
+          onMaximize={toggleMinimize}
+          onEndCall={endCall}
+        />
+      )}
+
+      {/* Minimized Audio Call - Banner with return button */}
+      {currentCall && isMinimized && currentCall.callType === "audio" && (
+        <MinimizedAudioCall
+          recipientName={currentCall.recipientName}
+          onMaximize={toggleMinimize}
+          onEndCall={endCall}
         />
       )}
     </div>

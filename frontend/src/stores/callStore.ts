@@ -33,6 +33,7 @@ interface CallState {
   peerConnection: RTCPeerConnection | null;
   isMuted: boolean;
   isVideoOff: boolean;
+  isMinimized: boolean;
   callDuration: number;
   iceServers: RTCIceServer[];
   pendingIceCandidates: RTCIceCandidateInit[];
@@ -52,6 +53,7 @@ interface CallState {
   endCall: () => void;
   toggleMute: () => void;
   toggleVideo: () => void;
+  toggleMinimize: () => void;
   setLocalStream: (stream: MediaStream | null) => void;
   setRemoteStream: (stream: MediaStream | null) => void;
   setCallDuration: (duration: number) => void;
@@ -72,6 +74,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   peerConnection: null,
   isMuted: false,
   isVideoOff: false,
+  isMinimized: false,
   callDuration: 0,
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
@@ -166,6 +169,11 @@ export const useCallStore = create<CallState>((set, get) => ({
       });
     }
     set({ isVideoOff: !isVideoOff });
+  },
+
+  toggleMinimize: () => {
+    const { isMinimized } = get();
+    set({ isMinimized: !isMinimized });
   },
 
   setLocalStream: (stream) => set({ localStream: stream }),
@@ -367,6 +375,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       peerConnection: null,
       isMuted: false,
       isVideoOff: false,
+      isMinimized: false,
       pendingIceCandidates: [],
       pendingOffer: null,
     });
