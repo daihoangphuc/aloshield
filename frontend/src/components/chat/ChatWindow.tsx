@@ -883,7 +883,18 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       )}
       
       {/* Header */}
-      <header className={`h-[70px] md:h-[80px] flex items-center justify-between px-3 md:px-6 border-b border-[var(--border)] bg-[var(--chat-bg)]/80 backdrop-blur-xl flex-shrink-0 z-10 ${isMobile ? 'sticky top-0' : ''}`}>
+      <header 
+        className={`flex items-center justify-between px-3 md:px-6 border-b border-[var(--border)] bg-[var(--chat-bg)]/80 backdrop-blur-xl flex-shrink-0 z-10 ${isMobile ? 'sticky top-0' : ''}`}
+        style={isMobile ? { 
+          top: 'env(safe-area-inset-top, 0px)',
+          paddingTop: `max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px)))`,
+          paddingBottom: '0.75rem',
+          minHeight: '70px',
+          height: 'auto'
+        } : {
+          height: '80px'
+        }}
+      >
         <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1 overflow-hidden">
           {isMobile && (
             <button 

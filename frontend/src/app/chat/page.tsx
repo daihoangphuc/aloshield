@@ -33,7 +33,7 @@ export default function ChatPage() {
     };
   }, []);
 
-  // Authentication Check & Load Data
+  // Authentication Check & Load Data - Optimized for faster initialization
   useEffect(() => {
     let mounted = true;
     
@@ -45,25 +45,40 @@ export default function ChatPage() {
       }
 
       try {
-        // Get user data if not available
-        let currentUser = user;
-        if (!currentUser) {
-          currentUser = await authApi.getMe();
-          if (mounted) setUser(currentUser);
-        }
-
-        // Connect socket
-        socketManager.connect();
-
-        // Load conversations immediately
-        const data = await conversationsApi.getAll();
-        if (mounted) {
-          setConversations(data.conversations || []);
+        // ✅ Show UI immediately if user already exists (from persisted store)
+        if (user) {
           setIsInitialized(true);
           setIsInitializing(false);
+          // Start background tasks
+          socketManager.connect();
+          conversationsApi.getAll().then(data => {
+            if (mounted) {
+              setConversations(data.conversations || []);
+            }
+          }).catch(console.error);
+          setAuthLoading(false);
+          return;
         }
+
+        // ✅ Get user data first (required for socket auth)
+        const currentUser = await authApi.getMe();
         
-        setAuthLoading(false);
+        if (mounted) {
+          setUser(currentUser);
+          setIsInitialized(true);
+          setIsInitializing(false);
+          setAuthLoading(false);
+        }
+
+        // ✅ Start socket connection and load conversations in parallel (non-blocking)
+        socketManager.connect();
+        conversationsApi.getAll().then(data => {
+          if (mounted) {
+            setConversations(data.conversations || []);
+          }
+        }).catch(error => {
+          console.error("Failed to load conversations:", error);
+        });
       } catch (error) {
         console.error("Failed to initialize:", error);
         if (mounted) router.push("/login");
