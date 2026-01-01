@@ -36,7 +36,7 @@ interface AuthenticatedSocket extends Socket {
     },
     credentials: true,
   },
-  transports: ['polling', 'websocket'], // Polling first for better Cloudflare compatibility
+  transports: ['websocket', 'polling'], // Websocket first for better performance
 })
 export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -133,6 +133,7 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
     },
   ) {
     try {
+      // Create message first
       const message = await this.messagesService.sendMessage(client.userId, {
         conversationId: data.conversationId,
         encryptedContent: data.encryptedContent,
@@ -143,12 +144,6 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
         attachments: data.attachments,
       });
 
-      // Send to all participants
-      const conversation = await this.conversationsService.getConversationById(
-        data.conversationId,
-        client.userId,
-      );
-
       // Prepare message payload with E2EE data
       const messagePayload = {
         ...message,
@@ -157,17 +152,30 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
         ephemeralPublicKey: data.ephemeralPublicKey,
       };
 
-      for (const participant of conversation.participants) {
-        // Emit message to participant
-        this.server.to(`user:${participant.user_id}`).emit('message:new', messagePayload);
-        
-        // If this is a new conversation for the recipient, also send conversation update
-        if (participant.user_id !== client.userId) {
-          this.server.to(`user:${participant.user_id}`).emit('conversation:updated', conversation);
-        }
-      }
+      // Return response immediately for better UX
+      const response = { success: true, message };
 
-      return { success: true, message };
+      // Broadcast to participants asynchronously (don't wait)
+      this.conversationsService.getConversationById(
+        data.conversationId,
+        client.userId,
+      ).then((conversation) => {
+        for (const participant of conversation.participants) {
+          // Emit message to participant
+          this.server.to(`user:${participant.user_id}`).emit('message:new', messagePayload);
+          
+          // If this is a new conversation for the recipient, also send conversation update
+          if (participant.user_id !== client.userId) {
+            this.server.to(`user:${participant.user_id}`).emit('conversation:updated', conversation);
+          }
+        }
+      }).catch((error) => {
+        console.error('Error broadcasting message:', error);
+        // Still emit to sender as fallback
+        this.server.to(`user:${client.userId}`).emit('message:new', messagePayload);
+      });
+
+      return response;
     } catch (error) {
       return { success: false, error: error.message };
     }

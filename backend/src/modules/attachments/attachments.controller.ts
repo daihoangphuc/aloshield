@@ -60,8 +60,18 @@ export class AttachmentsController {
     // Use the actual MIME type from database, fallback to octet-stream if not available
     const contentType = mimeType || 'application/octet-stream';
     
+    // Set headers to ensure proper file download with original filename and extension
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+    res.setHeader('Content-Length', buffer.length);
+    
+    // Use both filename and filename* for better browser compatibility
+    // filename* uses UTF-8 encoding for international characters
+    const encodedFileName = encodeURIComponent(fileName);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${fileName}"; filename*=UTF-8''${encodedFileName}`
+    );
+    
     res.send(buffer);
   }
 }

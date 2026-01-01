@@ -37,7 +37,7 @@ interface AuthenticatedSocket extends Socket {
     },
     credentials: true,
   },
-  transports: ['polling', 'websocket'], // Polling first for better Cloudflare compatibility
+  transports: ['websocket', 'polling'], // Websocket first for better performance // Polling first for better Cloudflare compatibility
 })
 export class CallsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()

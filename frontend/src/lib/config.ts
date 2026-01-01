@@ -50,7 +50,8 @@ const getWsUrl = () => {
     }
   }
   
-  return "http://localhost:3001";
+  // For local dev, backend has /api prefix
+  return "http://localhost:3001/api";
 };
 
 export const config = {

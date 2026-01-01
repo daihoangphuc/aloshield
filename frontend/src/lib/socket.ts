@@ -19,24 +19,32 @@ class SocketManager {
     if (!token) return;
 
     // Extract base URL and path
-    // If wsUrl is like "wss://api.phucndh.site/api", extract base URL and path
+    // Backend always has /api prefix, so Socket.IO path must be /api/socket.io/
     let baseWsUrl = config.wsUrl;
-    let socketPath = '/socket.io/';
+    let socketPath = '/api/socket.io/'; // Backend has global /api prefix
     
     if (config.wsUrl.includes('/api')) {
       // Split URL to get base and path
+      // e.g., "http://localhost:3001/api" -> base: "http://localhost:3001", path: "/api/socket.io/"
       const urlObj = new URL(config.wsUrl);
-      baseWsUrl = `${urlObj.protocol}//${urlObj.host}`;
+      // Use origin to avoid duplicate port (origin already includes protocol, hostname, and port)
+      baseWsUrl = urlObj.origin;
+      socketPath = '/api/socket.io/';
+    } else if (config.wsUrl.includes('localhost') || config.wsUrl.includes('127.0.0.1')) {
+      // For local dev, backend is on localhost:3001 with /api prefix
+      const urlObj = new URL(config.wsUrl);
+      // Use origin to avoid duplicate port
+      baseWsUrl = urlObj.origin;
       socketPath = '/api/socket.io/';
     }
 
     console.log('🔌 Connecting sockets:', { baseWsUrl, socketPath });
 
     // Main socket for messages (default namespace)
-    // Use polling first for better Cloudflare Tunnel compatibility
+    // Try websocket first for better performance, fallback to polling if needed
     this.socket = io(baseWsUrl, {
       auth: { token },
-      transports: ["polling", "websocket"], // Polling first, fallback to websocket
+      transports: ["websocket", "polling"], // Try websocket first for better performance
       path: socketPath,
       reconnection: true,
       reconnectionDelay: 1000,
@@ -44,6 +52,7 @@ class SocketManager {
       reconnectionAttempts: 10,
       upgrade: true, // Allow upgrade from polling to websocket
       rememberUpgrade: true, // Remember successful upgrade
+      forceNew: false, // Reuse existing connection if possible
     });
 
     this.setupMainSocketListeners();
@@ -56,7 +65,7 @@ class SocketManager {
     console.log('📞 Connecting calls socket to:', callsUrl, 'with path:', socketPath);
     this.callsSocket = io(callsUrl, {
       auth: { token },
-      transports: ["polling", "websocket"], // Polling first, fallback to websocket
+      transports: ["websocket", "polling"], // Try websocket first for better performance
       path: socketPath,
       reconnection: true,
       reconnectionDelay: 1000,
@@ -64,6 +73,7 @@ class SocketManager {
       reconnectionAttempts: 10,
       upgrade: true, // Allow upgrade from polling to websocket
       rememberUpgrade: true, // Remember successful upgrade
+      forceNew: false, // Reuse existing connection if possible
     });
 
     this.callsSocket.on("connect", () => {
@@ -89,6 +99,12 @@ class SocketManager {
 
     this.socket.on("connect", () => {
       console.log("🔌 Socket connected");
+      // Log current transport to debug performance
+      console.log("📡 Socket transport:", this.socket?.io?.engine?.transport?.name || "unknown");
+    });
+
+    this.socket.on("upgrade", () => {
+      console.log("⬆️ Socket upgraded to:", this.socket?.io?.engine?.transport?.name || "unknown");
     });
 
     this.socket.on("disconnect", () => {
@@ -97,6 +113,12 @@ class SocketManager {
 
     this.socket.on("error", (error) => {
       console.error("Socket error:", error);
+      // Don't throw, just log - socket will handle reconnection
+    });
+
+    this.socket.on("connect_error", (error) => {
+      console.error("🔌 Socket connection error:", error);
+      // Log but don't throw - reconnection will be handled automatically
     });
 
     // Message events
@@ -333,6 +355,7 @@ class SocketManager {
     ratchetStep: number;
     tempId?: string;
     recipientId?: string;
+    replyToMessageId?: string;
     nonce?: string;
     ephemeralPublicKey?: string;
     attachments?: Array<{
@@ -341,23 +364,33 @@ class SocketManager {
     }>;
   }) {
     return new Promise(async (resolve, reject) => {
-      if (!this.socket) {
+      if (!this.socket || !this.socket.connected) {
         reject(new Error("Socket not connected"));
         return;
       }
 
       try {
         // E2EE disabled - send plaintext directly
-        const messageData = { ...data };
+        const messageData = {
+          ...data,
+          replyToMessageId: data.replyToMessageId,
+        };
+
+        // Use emit with acknowledgment for faster response
+        // Set timeout to prevent hanging
+        const timeout = setTimeout(() => {
+          reject(new Error("Message send timeout"));
+        }, 10000); // 10 second timeout
 
         this.socket.emit(
           "message:send",
           messageData,
           (response: { success: boolean; message?: unknown; error?: string }) => {
+            clearTimeout(timeout);
             if (response.success) {
               resolve(response.message);
             } else {
-              reject(new Error(response.error));
+              reject(new Error(response.error || "Failed to send message"));
             }
           }
         );

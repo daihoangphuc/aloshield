@@ -31,6 +31,7 @@ import {
   X,
   Download,
   Play,
+  Reply,
 } from "lucide-react";
 
 interface ChatWindowProps {
@@ -196,6 +197,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   
   // Image modal state
   const [selectedImage, setSelectedImage] = useState<{ url: string; fileName: string } | null>(null);
@@ -356,7 +358,13 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         ratchetStep: 0,
         tempId,
         recipientId: otherParticipant.id,
+        replyToMessageId: replyToMessage?.id,
       });
+      
+      // Clear reply after sending
+      if (replyToMessage) {
+        setReplyToMessage(null);
+      }
       
       if (sentMessage) {
         // ✅ Ensure own messages always start with "sent" status
@@ -611,16 +619,66 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
 
   const handleDownloadAttachment = async (attachmentId: string, fileName: string) => {
     try {
-      const result = await attachmentsApi.getDownloadUrl(attachmentId) as { downloadUrl: string };
+      // Use backend download endpoint to ensure proper Content-Disposition header
+      // This preserves the original file extension and name
+      const token = Cookies.get("accessToken");
+      const downloadUrl = `${config.apiUrl}/attachments/${attachmentId}/download`;
       
-      // Open download URL in new tab
+      // Fetch file with authentication
+      const response = await fetch(downloadUrl, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.status}`);
+      }
+      
+      // Get blob from response
+      const blob = await response.blob();
+      
+      // Get filename from Content-Disposition header if available, otherwise use provided filename
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let finalFileName = fileName;
+      
+      if (contentDisposition) {
+        // Try to get filename* (UTF-8 encoded) first, then fallback to filename
+        const filenameStarMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/);
+        if (filenameStarMatch && filenameStarMatch[1]) {
+          // Decode URI encoded filename from filename*
+          finalFileName = decodeURIComponent(filenameStarMatch[1]);
+        } else {
+          // Fallback to regular filename
+          const fileNameMatch = contentDisposition.match(/filename=["']?([^"';]+)["']?/i);
+          if (fileNameMatch && fileNameMatch[1]) {
+            finalFileName = fileNameMatch[1];
+            // Decode if it's URI encoded
+            try {
+              finalFileName = decodeURIComponent(finalFileName);
+            } catch (e) {
+              // If decode fails, use as is
+            }
+          }
+        }
+      }
+      
+      // Ensure filename has extension if not present
+      // Use original fileName as fallback if parsed name doesn't have extension
+      if (!finalFileName.includes('.') && fileName.includes('.')) {
+        finalFileName = fileName;
+      }
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = result.downloadUrl;
-      link.download = fileName;
-      link.target = "_blank";
+      link.href = url;
+      link.download = finalFileName; // Use filename from header to preserve extension
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
     } catch (error) {
       console.error("Failed to download attachment:", error);
       alert("Không thể tải tệp. Vui lòng thử lại.");
@@ -914,10 +972,18 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
                             const messageEl = messageRefs.current[msg.id];
                             if (messageEl) {
                               const rect = messageEl.getBoundingClientRect();
+                              // Position menu right below the message bubble
+                              // Use getBoundingClientRect which returns viewport coordinates for fixed positioning
                               if (isMe) {
-                                setMenuPosition({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                                setMenuPosition({ 
+                                  top: rect.bottom + 4, 
+                                  right: window.innerWidth - rect.right 
+                                });
                               } else {
-                                setMenuPosition({ top: rect.bottom + 4, left: rect.left });
+                                setMenuPosition({ 
+                                  top: rect.bottom + 4, 
+                                  left: rect.left 
+                                });
                               }
                             }
                             setActiveMessageMenu(activeMessageMenu === msg.id ? null : msg.id);
@@ -1167,6 +1233,34 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         </span>
       </div>
 
+      {/* Reply Preview - Floating above input */}
+      {replyToMessage && (
+        <div className="mx-3 md:mx-4 mb-2 animate-in slide-in-from-bottom-2 duration-200">
+          <div className="bg-[#1a1f2e] border-l-4 border-[var(--primary)] rounded-xl p-3 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0 mt-0.5">
+                <Reply size={16} className="text-[var(--primary)]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-[var(--primary)] mb-1">
+                  {replyToMessage.sender?.display_name || replyToMessage.sender?.username || "Người dùng"}
+                </p>
+                <p className="text-sm text-white line-clamp-2">
+                  {replyToMessage.content || replyToMessage.encrypted_content || "[Tin nhắn đã bị xóa]"}
+                </p>
+              </div>
+              <button
+                onClick={() => setReplyToMessage(null)}
+                className="p-1 hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
+                title="Hủy trả lời"
+              >
+                <X size={16} className="text-[var(--text-muted)] hover:text-white" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* File Preview - Floating above input */}
       {selectedFile && (
         <div className="mx-3 md:mx-4 mb-2 animate-in slide-in-from-bottom-2 duration-200">
@@ -1339,10 +1433,25 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
               top: `${menuPosition.top}px`,
               ...(menuPosition.left !== undefined ? { left: `${menuPosition.left}px` } : {}),
               ...(menuPosition.right !== undefined ? { right: `${menuPosition.right}px` } : {}),
+              transform: 'translateY(0)',
             }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="overflow-hidden rounded-xl">
+              {!isMe && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setReplyToMessage(msg);
+                    setActiveMessageMenu(null);
+                    setMenuPosition(null);
+                  }}
+                  className="w-full px-4 py-2.5 text-left text-sm text-white hover:bg-white/10 flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Reply size={14} />
+                  Trả lời
+                </button>
+              )}
               {isMe && canEditMessage(msg.created_at) && (
                 <button
                   onClick={(e) => {
