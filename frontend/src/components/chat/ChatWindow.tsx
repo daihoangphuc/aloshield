@@ -333,6 +333,13 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     if (inputValue.trim()) {
       await handleSendMessage();
     }
+    
+    // Focus back to textarea after sending
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+    }, 0);
   };
 
   const handleSendMessage = async () => {
@@ -392,6 +399,12 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       console.error("Failed to send message:", error);
     } finally {
       setIsSending(false);
+      // Focus back to textarea after sending
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+        }
+      }, 0);
     }
   };
 

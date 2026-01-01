@@ -244,6 +244,8 @@ export const useCallStore = create<CallState>((set, get) => ({
     // Remote stream handler
     pc.ontrack = (event) => {
       console.log("🎥 Remote track received:", event.track.kind, event.streams[0]);
+      console.log("🎥 Track enabled:", event.track.enabled, "Track readyState:", event.track.readyState);
+      console.log("🎥 Stream tracks:", event.streams[0]?.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })));
       set({ remoteStream: event.streams[0] });
     };
 
@@ -273,9 +275,10 @@ export const useCallStore = create<CallState>((set, get) => ({
 
       stream.getTracks().forEach((track) => {
         pc.addTrack(track, stream);
+        console.log("🎥 Added local track:", track.kind, "enabled:", track.enabled);
       });
 
-      console.log("🎥 Local stream obtained:", stream, "Tracks:", stream.getTracks().map(t => t.kind));
+      console.log("🎥 Local stream obtained:", stream, "Tracks:", stream.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })));
       set({ localStream: stream, peerConnection: pc });
 
       // Process pending offer (when receiving call)
@@ -314,14 +317,15 @@ export const useCallStore = create<CallState>((set, get) => ({
   },
 
   createOffer: async () => {
-    const { peerConnection } = get();
+    const { peerConnection, currentCall } = get();
     if (!peerConnection) {
       throw new Error("No peer connection");
     }
 
+    const isVideoCall = currentCall?.callType === "video";
     const offer = await peerConnection.createOffer({
       offerToReceiveAudio: true,
-      offerToReceiveVideo: true,
+      offerToReceiveVideo: isVideoCall,
     });
 
     await peerConnection.setLocalDescription(offer);

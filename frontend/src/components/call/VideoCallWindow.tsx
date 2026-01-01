@@ -54,7 +54,22 @@ export function VideoCallWindow() {
       if (currentCall?.callType === "audio" && remoteAudioRef.current) {
         console.log("🔊 Setting remote audio srcObject");
         remoteAudioRef.current.srcObject = remoteStream;
-        remoteAudioRef.current.play().catch(e => console.error("Error playing remote audio:", e));
+        remoteAudioRef.current.muted = false;
+        remoteAudioRef.current.volume = 1.0;
+        remoteAudioRef.current.play().catch(e => {
+          console.error("Error playing remote audio:", e);
+          // Retry play if it fails (browser autoplay policy)
+          setTimeout(() => {
+            if (remoteAudioRef.current) {
+              remoteAudioRef.current.play().catch(err => console.error("Retry play failed:", err));
+            }
+          }, 100);
+        });
+      }
+    } else {
+      // Clear audio element when stream is removed
+      if (remoteAudioRef.current && currentCall?.callType === "audio") {
+        remoteAudioRef.current.srcObject = null;
       }
     }
   }, [remoteStream, currentCall?.callType]);
@@ -76,7 +91,13 @@ export function VideoCallWindow() {
   return (
     <div className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col animate-in">
       {/* Hidden audio element for audio calls */}
-      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+      <audio 
+        ref={remoteAudioRef} 
+        autoPlay 
+        playsInline 
+        muted={false}
+        className="hidden" 
+      />
       {/* REMOTE VIDEO (FULL SCREEN) */}
       <div className="absolute inset-0 overflow-hidden">
         {remoteStream && currentCall.callType === "video" ? (
