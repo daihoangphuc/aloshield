@@ -58,10 +58,22 @@ jobs:
             set -e
             cd /opt/aloshield
             
-            # Build and run with Docker Compose
+            # Read frontend env variables from .env file for build args
+            echo "📖 Reading frontend environment variables..."
+            export NEXT_PUBLIC_API_URL=$(grep "^NEXT_PUBLIC_API_URL=" frontend/.env | cut -d '=' -f2- | tr -d '\r' || echo "")
+            export NEXT_PUBLIC_WS_URL=$(grep "^NEXT_PUBLIC_WS_URL=" frontend/.env | cut -d '=' -f2- | tr -d '\r' || echo "")
+            export NEXT_PUBLIC_SUPABASE_URL=$(grep "^NEXT_PUBLIC_SUPABASE_URL=" frontend/.env | cut -d '=' -f2- | tr -d '\r' || echo "")
+            export NEXT_PUBLIC_SUPABASE_ANON_KEY=$(grep "^NEXT_PUBLIC_SUPABASE_ANON_KEY=" frontend/.env | cut -d '=' -f2- | tr -d '\r' || echo "")
+            export NEXT_PUBLIC_GOOGLE_CLIENT_ID=$(grep "^NEXT_PUBLIC_GOOGLE_CLIENT_ID=" frontend/.env | cut -d '=' -f2- | tr -d '\r' || echo "")
+            
+            echo "🔧 Build args:"
+            echo "  NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL"
+            echo "  NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL"
+            
+            # Build and run with Docker Compose (pass env vars via sudo -E)
             echo "🐳 Building and starting containers..."
             sudo docker compose down || true
-            sudo docker compose build --no-cache
+            sudo -E bash -c 'docker compose build --no-cache'
             sudo docker compose up -d
             
             # Cleanup old images
