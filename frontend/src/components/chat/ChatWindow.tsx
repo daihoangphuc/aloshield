@@ -491,6 +491,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   const [activeMessageMenu, setActiveMessageMenu] = useState<string | null>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left?: number; right?: number } | null>(null);
   const messageRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const messageMenuButtonRefs = useRef<{ [key: string]: HTMLButtonElement | null }>({});
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState("");
   const [showEmojiPicker, setShowEmojiPicker] = useState<string | null>(null);
@@ -787,9 +788,113 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   };
 
   // File handling functions
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, isImage: boolean) => {
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>, isImage: boolean) => {
     const files = Array.from(e.target.files || []);
-    if (files.length === 0) return;
+    if (files.length === 0) {
+      console.log('No files selected');
+      return;
+    }
+
+    console.log('handleFileSelect called with', files.length, 'files');
+
+    // Validate each file size (max 100MB)
+    const invalidFiles = files.filter(file => file.size > 100 * 1024 * 1024);
+    if (invalidFiles.length > 0) {
+      alert(`Một số tệp quá lớn. Kích thước tối đa là 100MB cho mỗi tệp.\nTệp không hợp lệ: ${invalidFiles.map(f => f.name).join(', ')}`);
+      // Reset input
+      e.target.value = '';
+      return;
+    }
+
+    // Add new files to existing selection (max 10 files at once)
+    const maxFiles = 10;
+    const currentCount = selectedFiles.length;
+    const remainingSlots = maxFiles - currentCount;
+    
+    let filesToAdd = files;
+    if (files.length > remainingSlots) {
+      alert(`Bạn chỉ có thể đính kèm tối đa ${maxFiles} tệp. Đã chọn ${remainingSlots} tệp đầu tiên.`);
+      filesToAdd = files.slice(0, remainingSlots);
+    }
+
+    // Filter out duplicates by name
+    const existingFileNames = new Set(selectedFiles.map(f => f.name));
+    const uniqueFilesToAdd = filesToAdd.filter(file => !existingFileNames.has(file.name));
+    
+    if (uniqueFilesToAdd.length === 0) {
+      alert('Tất cả các tệp đã được chọn trước đó.');
+      e.target.value = '';
+      return;
+    }
+
+    const newFiles = [...selectedFiles, ...uniqueFilesToAdd];
+    console.log('Setting selectedFiles to', newFiles.length, 'files');
+    setSelectedFiles(newFiles);
+
+    // Create previews for images
+    uniqueFilesToAdd.forEach(file => {
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setFilePreviews(prev => {
+            const newMap = new Map(prev);
+            newMap.set(file.name, e.target?.result as string);
+            return newMap;
+          });
+        };
+        reader.onerror = (error) => {
+          console.error('Error reading image file:', error);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    // Reset input to allow selecting same files again
+    e.target.value = '';
+  }, [selectedFiles]);
+
+  const clearSelectedFile = useCallback((fileName?: string) => {
+    if (fileName) {
+      // Remove single file
+      setSelectedFiles(prev => prev.filter(f => f.name !== fileName));
+      setFilePreviews(prev => {
+        const newMap = new Map(prev);
+        const previewUrl = prev.get(fileName);
+        // Revoke object URL to prevent memory leaks
+        if (previewUrl && (previewUrl.startsWith('blob:') || previewUrl.startsWith('data:'))) {
+          // Data URLs don't need revoking, but blob URLs do
+          if (previewUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(previewUrl);
+          }
+        }
+        newMap.delete(fileName);
+        return newMap;
+      });
+    } else {
+      // Clear all files
+      setFilePreviews(prev => {
+        // Revoke all object URLs to prevent memory leaks
+        prev.forEach(previewUrl => {
+          if (previewUrl.startsWith('blob:')) {
+            URL.revokeObjectURL(previewUrl);
+          }
+        });
+        return new Map();
+      });
+      setSelectedFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    }
+  }, []);
+
+  // Handle files from drag & drop or paste
+  const handleFilesFromDrop = useCallback((files: File[]) => {
+    console.log('handleFilesFromDrop called with', files.length, 'files');
+    
+    if (files.length === 0) {
+      console.log('No files in drop');
+      return;
+    }
 
     // Validate each file size (max 100MB)
     const invalidFiles = files.filter(file => file.size > 100 * 1024 * 1024);
@@ -803,92 +908,47 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     const currentCount = selectedFiles.length;
     const remainingSlots = maxFiles - currentCount;
     
-    if (files.length > remainingSlots) {
-      alert(`Bạn chỉ có thể đính kèm tối đa ${maxFiles} tệp. Vui lòng chọn lại.`);
-      files.splice(remainingSlots);
-    }
-
-    const newFiles = [...selectedFiles, ...files];
-    setSelectedFiles(newFiles);
-
-    // Create previews for images
-    const newPreviews = new Map(filePreviews);
-    files.forEach(file => {
-      if (file.type.startsWith("image/")) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          newPreviews.set(file.name, e.target?.result as string);
-          setFilePreviews(new Map(newPreviews));
-        };
-        reader.readAsDataURL(file);
-      }
-    });
-  };
-
-  const clearSelectedFile = (fileName?: string) => {
-    if (fileName) {
-      // Remove single file
-      setSelectedFiles(prev => prev.filter(f => f.name !== fileName));
-      setFilePreviews(prev => {
-        const newMap = new Map(prev);
-        newMap.delete(fileName);
-        // Revoke object URL to prevent memory leaks
-        const previewUrl = prev.get(fileName);
-        if (previewUrl && previewUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(previewUrl);
-        }
-        return newMap;
-      });
-    } else {
-      // Clear all files
-      // Revoke all object URLs to prevent memory leaks
-      filePreviews.forEach(previewUrl => {
-        if (previewUrl.startsWith('blob:')) {
-          URL.revokeObjectURL(previewUrl);
-        }
-      });
-      setSelectedFiles([]);
-      setFilePreviews(new Map());
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      if (imageInputRef.current) imageInputRef.current.value = "";
-    }
-  };
-
-  // Handle files from drag & drop or paste
-  const handleFilesFromDrop = (files: File[]) => {
-    // Validate each file size (max 100MB)
-    const invalidFiles = files.filter(file => file.size > 100 * 1024 * 1024);
-    if (invalidFiles.length > 0) {
-      alert(`Một số tệp quá lớn. Kích thước tối đa là 100MB cho mỗi tệp.\nTệp không hợp lệ: ${invalidFiles.map(f => f.name).join(', ')}`);
+    if (remainingSlots <= 0) {
+      alert(`Bạn đã đạt giới hạn tối đa ${maxFiles} tệp. Vui lòng xóa một số tệp trước khi thêm mới.`);
       return;
     }
-
-    // Add new files to existing selection (max 10 files at once)
-    const maxFiles = 10;
-    const currentCount = selectedFiles.length;
-    const remainingSlots = maxFiles - currentCount;
     
     const filesToAdd = files.slice(0, remainingSlots);
     if (files.length > remainingSlots) {
       alert(`Bạn chỉ có thể đính kèm tối đa ${maxFiles} tệp. Đã chọn ${filesToAdd.length} tệp đầu tiên.`);
     }
 
-    const newFiles = [...selectedFiles, ...filesToAdd];
+    // Filter out duplicates by name
+    const existingFileNames = new Set(selectedFiles.map(f => f.name));
+    const uniqueFilesToAdd = filesToAdd.filter(file => !existingFileNames.has(file.name));
+    
+    if (uniqueFilesToAdd.length === 0) {
+      alert('Tất cả các tệp đã được chọn trước đó.');
+      return;
+    }
+
+    const newFiles = [...selectedFiles, ...uniqueFilesToAdd];
+    console.log('Setting selectedFiles to', newFiles.length, 'files');
     setSelectedFiles(newFiles);
 
     // Create previews for images
-    const newPreviews = new Map(filePreviews);
-    filesToAdd.forEach(file => {
+    uniqueFilesToAdd.forEach(file => {
       if (file.type.startsWith("image/")) {
         const reader = new FileReader();
         reader.onload = (e) => {
-          newPreviews.set(file.name, e.target?.result as string);
-          setFilePreviews(new Map(newPreviews));
+          setFilePreviews(prev => {
+            const newMap = new Map(prev);
+            newMap.set(file.name, e.target?.result as string);
+            return newMap;
+          });
+        };
+        reader.onerror = (error) => {
+          console.error('Error reading image file:', error);
         };
         reader.readAsDataURL(file);
       }
     });
-  };
+  }, [selectedFiles]);
 
   // Drag and drop handlers
   const handleDragEnter = (e: React.DragEvent) => {
@@ -949,7 +1009,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
 
     document.addEventListener("paste", handlePaste);
     return () => document.removeEventListener("paste", handlePaste);
-  }, [selectedFiles, filePreviews]); // Add dependencies
+  }, [handleFilesFromDrop]); // Include handleFilesFromDrop in deps
 
   // Close sticker picker when clicking outside
   useEffect(() => {
@@ -1429,13 +1489,13 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
                         </button>
                         
                         <button 
+                          ref={(el) => { messageMenuButtonRefs.current[msg.id] = el; }}
                           onClick={(e) => {
                             e.stopPropagation();
-                            const messageEl = messageRefs.current[msg.id];
-                            if (messageEl) {
-                              const rect = messageEl.getBoundingClientRect();
-                              // Position menu right below the message bubble
-                              // Use getBoundingClientRect which returns viewport coordinates for fixed positioning
+                            const buttonEl = messageMenuButtonRefs.current[msg.id];
+                            if (buttonEl) {
+                              const rect = buttonEl.getBoundingClientRect();
+                              // Position menu right below the button
                               if (isMe) {
                                 setMenuPosition({ 
                                   top: rect.bottom + 4, 
@@ -1753,6 +1813,97 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         </div>
       )}
 
+      {/* Files Preview - Floating above input */}
+      {selectedFiles.length > 0 && (
+        <div className="mx-3 md:mx-4 mb-2 animate-in slide-in-from-bottom-2 duration-200">
+          <div className="bg-[#1a1f2e] border border-[var(--border)] rounded-2xl p-3 shadow-xl">
+            {/* Header with count and clear all */}
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-medium text-white">
+                {selectedFiles.length} {selectedFiles.length === 1 ? 'tệp đã chọn' : 'tệp đã chọn'}
+              </p>
+              <button
+                onClick={() => clearSelectedFile()}
+                className="text-xs text-[var(--text-muted)] hover:text-white transition-colors"
+                title="Xóa tất cả"
+              >
+                Xóa tất cả
+              </button>
+            </div>
+
+            {/* Files list */}
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {selectedFiles.map((file, index) => {
+                const preview = filePreviews.get(file.name);
+                return (
+                  <div key={`${file.name}-${index}`} className="flex items-center gap-3 bg-[#0d1117]/50 rounded-xl p-2">
+                    {/* File icon/preview */}
+                    <div className="relative flex-shrink-0">
+                      {preview ? (
+                        <div className="relative">
+                          <img 
+                            src={preview} 
+                            alt={file.name} 
+                            className="w-10 h-10 rounded-lg object-cover"
+                          />
+                          <div className="absolute inset-0 rounded-lg ring-1 ring-white/10" />
+                        </div>
+                      ) : (
+                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+                          file.type.startsWith("video/") 
+                            ? "bg-purple-500/20" 
+                            : file.type.startsWith("audio/")
+                              ? "bg-green-500/20"
+                              : file.type.includes("pdf")
+                                ? "bg-red-500/20"
+                                : "bg-blue-500/20"
+                        }`}>
+                          {file.type.startsWith("video/") ? (
+                            <Video size={18} className="text-purple-400" />
+                          ) : file.type.startsWith("audio/") ? (
+                            <Play size={18} className="text-green-400" />
+                          ) : file.type.includes("pdf") ? (
+                            <FileText size={18} className="text-red-400" />
+                          ) : (
+                            <FileText size={18} className="text-blue-400" />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* File info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-white truncate">{file.name}</p>
+                      <p className="text-[10px] text-[var(--text-muted)]">
+                        {file.size < 1024 * 1024 
+                          ? `${(file.size / 1024).toFixed(1)} KB`
+                          : `${(file.size / 1024 / 1024).toFixed(2)} MB`
+                        }
+                      </p>
+                    </div>
+                    
+                    {/* Remove single file button */}
+                    <button
+                      onClick={() => clearSelectedFile(file.name)}
+                      className="p-1 hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
+                      title="Xóa tệp này"
+                    >
+                      <X size={14} className="text-[var(--text-muted)] hover:text-white" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* Upload progress bar */}
+            {isUploading && (
+              <div className="mt-3 h-1 bg-white/10 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-[var(--primary)] to-[var(--accent)] rounded-full animate-pulse" style={{ width: '60%' }} />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Input Area */}
       <div className={`p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)] ${isMobile ? 'pb-4' : ''}`} style={isMobile ? { paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' } : undefined}>
@@ -1863,7 +2014,6 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
               top: `${menuPosition.top}px`,
               ...(menuPosition.left !== undefined ? { left: `${menuPosition.left}px` } : {}),
               ...(menuPosition.right !== undefined ? { right: `${menuPosition.right}px` } : {}),
-              transform: 'translateY(0)',
             }}
             onClick={(e) => e.stopPropagation()}
           >

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, ZoomIn, ZoomOut, RotateCw, Loader2 } from "lucide-react";
+import { X, ZoomIn, ZoomOut, RotateCw, Loader2, Download } from "lucide-react";
 import Cookies from "js-cookie";
 
 interface ImageModalProps {
@@ -198,6 +198,30 @@ export function ImageModal({ imageUrl, fileName, onClose }: ImageModalProps) {
     lastTouchDistance.current = null;
   };
 
+  const handleDownload = async () => {
+    if (!blobUrl) return;
+    
+    try {
+      // Fetch the blob URL
+      const response = await fetch(blobUrl);
+      const blob = await response.blob();
+      
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Cleanup
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to download image:', error);
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -246,6 +270,15 @@ export function ImageModal({ imageUrl, fileName, onClose }: ImageModalProps) {
         <span className="px-3 py-2 rounded-full bg-black/60 text-white text-sm font-medium">
           {Math.round(scale * 100)}%
         </span>
+        <button
+          onClick={handleDownload}
+          disabled={!blobUrl || isLoading}
+          className="p-3 rounded-full bg-black/60 hover:bg-black/80 text-white transition-all hover:scale-110 active:scale-95 disabled:opacity-50"
+          aria-label="Tải về"
+          title="Tải về"
+        >
+          <Download size={20} />
+        </button>
       </div>
 
       {/* Image */}
