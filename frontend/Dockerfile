@@ -35,6 +35,9 @@ COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
     npm ci
 
+# Verify TypeScript is installed (needed for next.config.ts)
+RUN npm list typescript || npm install typescript@^5
+
 # Copy configuration files
 COPY next.config.ts tsconfig.json postcss.config.mjs ./
 COPY eslint.config.mjs ./
