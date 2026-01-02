@@ -663,19 +663,12 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         setIsUserScrolling(false);
         // Re-check if near bottom after scroll stops
         const stillNearBottom = checkIfNearBottom();
-        // ✅ If user scrolled to bottom, enable auto-scroll
+        // ✅ If user scrolled to bottom, enable auto-scroll flag (but don't actually scroll)
         // If user scrolled up, disable auto-scroll (user wants to read old messages)
         setShouldAutoScroll(stillNearBottom);
         
-        // ✅ If user scrolled back to bottom, ensure last message is visible
-        // Only if initial scroll has completed
-        if (stillNearBottom && messagesEndRef.current && hasInitialScrolledRef.current) {
-          requestAnimationFrame(() => {
-            if (messagesEndRef.current && stillNearBottom) {
-              messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
-            }
-          });
-        }
+        // ❌ REMOVED: No auto-scroll when user scrolls back to bottom
+        // User requirement: Only auto-scroll when opening conversation, let user control scrolling
       }, 150);
     };
 
@@ -714,42 +707,9 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     };
   }, [conversationId, isLoadingMessages]);
 
-  // Auto scroll to bottom when new messages arrive (only if user is near bottom)
-  useEffect(() => {
-    // ✅ Skip auto-scroll on initial load - let the conversation change effect handle it
-    if (!hasInitialScrolledRef.current) {
-      // Wait for initial scroll to complete
-      return;
-    }
-    
-    // ✅ ALWAYS scroll when new message arrives if shouldAutoScroll is true
-    // This ensures latest message is always visible
-    if (!shouldAutoScroll) return;
-    
-    // Don't scroll if user is actively scrolling
-    if (isUserScrolling) {
-      // But check again after scroll stops
-      const timeout = setTimeout(() => {
-        if (shouldAutoScroll && messagesEndRef.current && hasInitialScrolledRef.current) {
-          requestAnimationFrame(() => {
-            if (messagesEndRef.current && shouldAutoScroll) {
-              messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
-            }
-          });
-        }
-      }, 200);
-      return () => clearTimeout(timeout);
-    }
-    
-    if (messagesEndRef.current) {
-      // Use requestAnimationFrame to ensure DOM is updated
-      requestAnimationFrame(() => {
-        if (messagesEndRef.current && shouldAutoScroll && hasInitialScrolledRef.current) {
-          messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
-        }
-      });
-    }
-  }, [conversationMessages.length, isOtherTyping, shouldAutoScroll, isUserScrolling]);
+  // ❌ REMOVED: Auto scroll when new messages arrive
+  // User requirement: Only auto-scroll when opening conversation, not when new messages arrive
+  // This prevents unwanted scrolling when user is reading old messages
 
   // Handle mobile keyboard - Track visual viewport changes
   useEffect(() => {
@@ -768,19 +728,8 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           // Input area uses position: fixed with bottom: 0, so it will naturally sit above keyboard
           setKeyboardHeight(heightDiff);
           
-          // ✅ Scroll to bottom when keyboard appears to ensure last message is visible
-          // Use longer delay to let input area stabilize first
-          if (isInputFocused && messagesEndRef.current) {
-            setTimeout(() => {
-              if (messagesEndRef.current && messagesContainerRef.current) {
-                const container = messagesContainerRef.current;
-                container.scrollTo({
-                  top: container.scrollHeight,
-                  behavior: 'smooth'
-                });
-              }
-            }, 200);
-          }
+          // ❌ REMOVED: No scroll when keyboard appears
+          // User requirement: No auto-scroll when keyboard appears, let interface stay stable
         } else {
           setKeyboardHeight(0);
         }
@@ -814,25 +763,10 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     const handleFocus = () => {
       setIsInputFocused(true);
       
-      // Always enable auto-scroll when focusing input (user wants to see new messages)
-      setShouldAutoScroll(true);
-      
-      // ✅ DON'T scroll immediately - let keyboard appear first
-      // Input area will be fixed at bottom: 0, keyboard will push it up naturally
-      // Only scroll after keyboard is fully visible to ensure last message is visible
-      // Use requestAnimationFrame to ensure DOM is ready
-      requestAnimationFrame(() => {
-        setTimeout(() => {
-          if (messagesEndRef.current && messagesContainerRef.current) {
-            const container = messagesContainerRef.current;
-            // Scroll to bottom to ensure last message is visible above keyboard
-            container.scrollTo({
-              top: container.scrollHeight,
-              behavior: 'smooth'
-            });
-          }
-        }, 600); // Wait longer for keyboard to fully appear and input area to stabilize
-      });
+      // ❌ REMOVED: No auto-scroll when focusing input
+      // User requirement: When clicking input, interface should stay stable, no scrolling
+      // Input area is fixed at bottom: 0, keyboard will push it up naturally
+      // No need to scroll - let the natural layout handle it
     };
 
     const handleBlur = () => {
