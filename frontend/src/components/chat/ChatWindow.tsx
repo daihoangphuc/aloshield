@@ -476,9 +476,9 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isTypingLocal, setIsTypingLocal] = useState(false);
   
-  // File upload state
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [filePreview, setFilePreview] = useState<string | null>(null);
+  // File upload state - support multiple files
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [filePreviews, setFilePreviews] = useState<Map<string, string>>(new Map()); // Map<fileName, previewUrl>
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -633,12 +633,12 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     }, 2000);
   }, [conversationId, isTypingLocal]);
 
-  // Send both file and text message together
+  // Send both files and text message together
   const handleSendAll = async () => {
-    if ((!inputValue.trim() && !selectedFile) || isSending || isUploading || !otherParticipant) return;
+    if ((!inputValue.trim() && selectedFiles.length === 0) || isSending || isUploading || !otherParticipant) return;
     
-    // If there's a file, send it first
-    if (selectedFile) {
+    // If there are files, send them first
+    if (selectedFiles.length > 0) {
       await handleSendFile();
     }
     
@@ -788,56 +788,106 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
 
   // File handling functions
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, isImage: boolean) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
 
-    // Validate file size (max 100MB)
-    if (file.size > 100 * 1024 * 1024) {
-      alert("Tệp quá lớn. Kích thước tối đa là 100MB");
+    // Validate each file size (max 100MB)
+    const invalidFiles = files.filter(file => file.size > 100 * 1024 * 1024);
+    if (invalidFiles.length > 0) {
+      alert(`Một số tệp quá lớn. Kích thước tối đa là 100MB cho mỗi tệp.\nTệp không hợp lệ: ${invalidFiles.map(f => f.name).join(', ')}`);
       return;
     }
 
-    setSelectedFile(file);
+    // Add new files to existing selection (max 10 files at once)
+    const maxFiles = 10;
+    const currentCount = selectedFiles.length;
+    const remainingSlots = maxFiles - currentCount;
+    
+    if (files.length > remainingSlots) {
+      alert(`Bạn chỉ có thể đính kèm tối đa ${maxFiles} tệp. Vui lòng chọn lại.`);
+      files.splice(remainingSlots);
+    }
 
-    // Create preview for images
-    if (isImage && file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setFilePreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+    const newFiles = [...selectedFiles, ...files];
+    setSelectedFiles(newFiles);
+
+    // Create previews for images
+    const newPreviews = new Map(filePreviews);
+    files.forEach(file => {
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          newPreviews.set(file.name, e.target?.result as string);
+          setFilePreviews(new Map(newPreviews));
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  };
+
+  const clearSelectedFile = (fileName?: string) => {
+    if (fileName) {
+      // Remove single file
+      setSelectedFiles(prev => prev.filter(f => f.name !== fileName));
+      setFilePreviews(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(fileName);
+        // Revoke object URL to prevent memory leaks
+        const previewUrl = prev.get(fileName);
+        if (previewUrl && previewUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(previewUrl);
+        }
+        return newMap;
+      });
     } else {
-      setFilePreview(null);
+      // Clear all files
+      // Revoke all object URLs to prevent memory leaks
+      filePreviews.forEach(previewUrl => {
+        if (previewUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(previewUrl);
+        }
+      });
+      setSelectedFiles([]);
+      setFilePreviews(new Map());
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      if (imageInputRef.current) imageInputRef.current.value = "";
     }
   };
 
-  const clearSelectedFile = () => {
-    setSelectedFile(null);
-    setFilePreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (imageInputRef.current) imageInputRef.current.value = "";
-  };
-
-  // Handle file from drag & drop or paste
-  const handleFileFromDrop = (file: File) => {
-    // Validate file size (max 100MB)
-    if (file.size > 100 * 1024 * 1024) {
-      alert("Tệp quá lớn. Kích thước tối đa là 100MB");
+  // Handle files from drag & drop or paste
+  const handleFilesFromDrop = (files: File[]) => {
+    // Validate each file size (max 100MB)
+    const invalidFiles = files.filter(file => file.size > 100 * 1024 * 1024);
+    if (invalidFiles.length > 0) {
+      alert(`Một số tệp quá lớn. Kích thước tối đa là 100MB cho mỗi tệp.\nTệp không hợp lệ: ${invalidFiles.map(f => f.name).join(', ')}`);
       return;
     }
 
-    setSelectedFile(file);
-
-    // Create preview for images
-    if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setFilePreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
-    } else {
-      setFilePreview(null);
+    // Add new files to existing selection (max 10 files at once)
+    const maxFiles = 10;
+    const currentCount = selectedFiles.length;
+    const remainingSlots = maxFiles - currentCount;
+    
+    const filesToAdd = files.slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+      alert(`Bạn chỉ có thể đính kèm tối đa ${maxFiles} tệp. Đã chọn ${filesToAdd.length} tệp đầu tiên.`);
     }
+
+    const newFiles = [...selectedFiles, ...filesToAdd];
+    setSelectedFiles(newFiles);
+
+    // Create previews for images
+    const newPreviews = new Map(filePreviews);
+    filesToAdd.forEach(file => {
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          newPreviews.set(file.name, e.target?.result as string);
+          setFilePreviews(new Map(newPreviews));
+        };
+        reader.readAsDataURL(file);
+      }
+    });
   };
 
   // Drag and drop handlers
@@ -870,9 +920,9 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     setIsDragging(false);
     dragCounterRef.current = 0;
 
-    const files = e.dataTransfer.files;
-    if (files && files.length > 0) {
-      handleFileFromDrop(files[0]);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      handleFilesFromDrop(files);
     }
   };
 
@@ -882,20 +932,24 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       const items = e.clipboardData?.items;
       if (!items) return;
 
+      const imageFiles: File[] = [];
       for (let i = 0; i < items.length; i++) {
         if (items[i].type.indexOf("image") !== -1) {
           const file = items[i].getAsFile();
           if (file) {
-            handleFileFromDrop(file);
-            break;
+            imageFiles.push(file);
           }
         }
+      }
+      
+      if (imageFiles.length > 0) {
+        handleFilesFromDrop(imageFiles);
       }
     };
 
     document.addEventListener("paste", handlePaste);
     return () => document.removeEventListener("paste", handlePaste);
-  }, []);
+  }, [selectedFiles, filePreviews]); // Add dependencies
 
   // Close sticker picker when clicking outside
   useEffect(() => {
@@ -918,81 +972,107 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   }, [showStickerPicker]);
 
   const handleSendFile = async () => {
-    if (!selectedFile || isUploading || !otherParticipant) return;
+    if (selectedFiles.length === 0 || isUploading || !otherParticipant) return;
 
     setIsUploading(true);
-    const tempId = `temp-${Date.now()}`;
+    const filesToSend = [...selectedFiles]; // Copy array to avoid mutation
+    const tempIds: string[] = [];
+    const tempMessages: (Message & { _renderKey?: string })[] = [];
 
     try {
-      // Upload file to R2
-      const uploadResult = await attachmentsApi.upload(conversationId, selectedFile) as {
-        attachmentId: string;
-        r2Key: string;
-        fileName: string;
-        fileSize: number;
-        mimeType: string;
-      };
-
-      // Determine content type
-      let contentType: "image" | "video" | "audio" | "file" = "file";
-      if (selectedFile.type.startsWith("image/")) contentType = "image";
-      else if (selectedFile.type.startsWith("video/")) contentType = "video";
-      else if (selectedFile.type.startsWith("audio/")) contentType = "audio";
-      const renderKey = tempId; // Stable key for React rendering
-      const tempMessage: Message & { _renderKey?: string } = {
-        id: tempId,
-        conversation_id: conversationId,
-        sender_id: user?.id || "",
-        encrypted_content: `[${contentType}] ${selectedFile.name}`,
-        content: `[${contentType}] ${selectedFile.name}`,
-        content_type: contentType,
-        session_version: 1,
-        ratchet_step: 0,
-        created_at: new Date().toISOString(),
-        sender: user || undefined,
-        status: "sent", // ✅ Show "sent" status immediately for smooth UX
-        _renderKey: renderKey, // Stable key to prevent flicker when ID updates
-        attachments: [{
-          id: uploadResult.attachmentId,
-          r2_key: uploadResult.r2Key,
-          file_name: uploadResult.fileName,
-          file_size: uploadResult.fileSize,
-          mime_type: uploadResult.mimeType,
-        }],
-      };
-
-      addMessage(tempMessage);
-
-      // Send message via socket with attachment info
-      const sentMessage = await socketManager.sendMessage({
-        conversationId,
-        encryptedContent: `[${contentType}] ${selectedFile.name}`,
-        contentType,
-        sessionVersion: 1,
-        ratchetStep: 0,
-        tempId,
-        recipientId: otherParticipant.id,
-        attachments: [{
-          attachmentId: uploadResult.attachmentId,
-          encryptedFileKey: "",
-        }],
+      // Upload all files in parallel
+      const uploadPromises = filesToSend.map(async (file) => {
+        const uploadResult = await attachmentsApi.upload(conversationId, file) as {
+          attachmentId: string;
+          r2Key: string;
+          fileName: string;
+          fileSize: number;
+          mimeType: string;
+        };
+        return { file, uploadResult };
       });
 
-      if (sentMessage) {
-        // ✅ Ensure own messages always start with "sent" status
-        const messageWithCorrectStatus = {
-          ...sentMessage,
-          status: "sent" as const, // Force "sent" status for own new messages
-        };
-        updateLastMessage(conversationId, messageWithCorrectStatus as Message);
-      }
+      const uploadResults = await Promise.all(uploadPromises);
 
-      clearSelectedFile();
+      // Determine content type based on first file (or mixed if different types)
+      const firstFile = filesToSend[0];
+      let contentType: "image" | "video" | "audio" | "file" = "file";
+      if (firstFile.type.startsWith("image/")) contentType = "image";
+      else if (firstFile.type.startsWith("video/")) contentType = "video";
+      else if (firstFile.type.startsWith("audio/")) contentType = "audio";
+
+      // Create temp messages and send them
+      const sendPromises = uploadResults.map(async ({ file, uploadResult }, index) => {
+        const tempId = `temp-${Date.now()}-${index}`;
+        tempIds.push(tempId);
+
+        // Determine content type for each file
+        let fileContentType: "image" | "video" | "audio" | "file" = "file";
+        if (file.type.startsWith("image/")) fileContentType = "image";
+        else if (file.type.startsWith("video/")) fileContentType = "video";
+        else if (file.type.startsWith("audio/")) fileContentType = "audio";
+
+        const renderKey = tempId;
+        const tempMessage: Message & { _renderKey?: string } = {
+          id: tempId,
+          conversation_id: conversationId,
+          sender_id: user?.id || "",
+          encrypted_content: `[${fileContentType}] ${file.name}`,
+          content: `[${fileContentType}] ${file.name}`,
+          content_type: fileContentType,
+          session_version: 1,
+          ratchet_step: 0,
+          created_at: new Date().toISOString(),
+          sender: user || undefined,
+          status: "sent",
+          _renderKey: renderKey,
+          attachments: [{
+            id: uploadResult.attachmentId,
+            r2_key: uploadResult.r2Key,
+            file_name: uploadResult.fileName,
+            file_size: uploadResult.fileSize,
+            mime_type: uploadResult.mimeType,
+          }],
+        };
+
+        tempMessages.push(tempMessage);
+        addMessage(tempMessage);
+
+        // Send message via socket with attachment info
+        const sentMessage = await socketManager.sendMessage({
+          conversationId,
+          encryptedContent: `[${fileContentType}] ${file.name}`,
+          contentType: fileContentType,
+          sessionVersion: 1,
+          ratchetStep: 0,
+          tempId,
+          recipientId: otherParticipant.id,
+          attachments: [{
+            attachmentId: uploadResult.attachmentId,
+            encryptedFileKey: "",
+          }],
+        });
+
+        if (sentMessage) {
+          const messageWithCorrectStatus = {
+            ...sentMessage,
+            status: "sent" as const,
+          };
+          updateLastMessage(conversationId, messageWithCorrectStatus as Message);
+        }
+
+        return sentMessage;
+      });
+
+      await Promise.all(sendPromises);
+      clearSelectedFile(); // Clear all files after successful upload
     } catch (error) {
-      console.error("Failed to send file:", error);
-      // Remove temp message on error
-      deleteMessage(conversationId, tempId);
-      alert("Không thể gửi tệp. Vui lòng thử lại.");
+      console.error("Failed to send files:", error);
+      // Remove temp messages on error
+      tempIds.forEach(tempId => {
+        deleteMessage(conversationId, tempId);
+      });
+      alert(`Không thể gửi ${filesToSend.length > 1 ? 'các tệp' : 'tệp'}. Vui lòng thử lại.`);
     } finally {
       setIsUploading(false);
     }
@@ -1673,83 +1753,15 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         </div>
       )}
 
-      {/* File Preview - Floating above input */}
-      {selectedFile && (
-        <div className="mx-3 md:mx-4 mb-2 animate-in slide-in-from-bottom-2 duration-200">
-          <div className="bg-[#1a1f2e] border border-[var(--border)] rounded-2xl p-3 shadow-xl">
-            <div className="flex items-center gap-3">
-              {/* File icon/preview */}
-              <div className="relative flex-shrink-0">
-                {filePreview ? (
-                  <div className="relative">
-                    <img 
-                      src={filePreview} 
-                      alt="Preview" 
-                      className="w-12 h-12 rounded-xl object-cover"
-                    />
-                    <div className="absolute inset-0 rounded-xl ring-1 ring-white/10" />
-                  </div>
-                ) : (
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                    selectedFile.type.startsWith("video/") 
-                      ? "bg-purple-500/20" 
-                      : selectedFile.type.startsWith("audio/")
-                        ? "bg-green-500/20"
-                        : selectedFile.type.includes("pdf")
-                          ? "bg-red-500/20"
-                          : "bg-blue-500/20"
-                  }`}>
-                    {selectedFile.type.startsWith("video/") ? (
-                      <Video size={22} className="text-purple-400" />
-                    ) : selectedFile.type.startsWith("audio/") ? (
-                      <Play size={22} className="text-green-400" />
-                    ) : selectedFile.type.includes("pdf") ? (
-                      <FileText size={22} className="text-red-400" />
-                    ) : (
-                      <FileText size={22} className="text-blue-400" />
-                    )}
-                  </div>
-                )}
-              </div>
-              
-              {/* File info */}
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{selectedFile.name}</p>
-                <p className="text-xs text-[var(--text-muted)]">
-                  {selectedFile.size < 1024 * 1024 
-                    ? `${(selectedFile.size / 1024).toFixed(1)} KB`
-                    : `${(selectedFile.size / 1024 / 1024).toFixed(2)} MB`
-                  }
-                </p>
-              </div>
-              
-              {/* Cancel button only - send will use main button */}
-              <button
-                onClick={clearSelectedFile}
-                className="p-2 hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
-                title="Hủy đính kèm"
-              >
-                <X size={18} className="text-[var(--text-muted)] hover:text-white" />
-              </button>
-            </div>
-            
-            {/* Upload progress bar */}
-            {isUploading && (
-              <div className="mt-3 h-1 bg-white/10 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-[var(--primary)] to-[var(--accent)] rounded-full animate-pulse" style={{ width: '60%' }} />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Input Area */}
       <div className={`p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)] ${isMobile ? 'pb-4' : ''}`} style={isMobile ? { paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' } : undefined}>
-        {/* Hidden file inputs */}
+        {/* Hidden file inputs - allow multiple files */}
         <input
           ref={imageInputRef}
           type="file"
           accept="image/*"
+          multiple
           className="hidden"
           onChange={(e) => handleFileSelect(e, true)}
         />
@@ -1757,6 +1769,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           ref={fileInputRef}
           type="file"
           accept="*/*"
+          multiple
           className="hidden"
           onChange={(e) => handleFileSelect(e, false)}
         />
@@ -1813,9 +1826,9 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
 
         <button
           onClick={handleSendAll}
-          disabled={(!inputValue.trim() && !selectedFile) || isSending || isUploading}
+          disabled={(!inputValue.trim() && selectedFiles.length === 0) || isSending || isUploading}
           className={`flex-shrink-0 w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all duration-300 ${
-            (inputValue.trim() || selectedFile) && !isSending && !isUploading
+            (inputValue.trim() || selectedFiles.length > 0) && !isSending && !isUploading
               ? "bg-gradient-to-r from-[var(--primary)] to-[var(--accent)] text-white shadow-lg shadow-[var(--primary-glow)] hover:scale-105 active:scale-95"
               : "bg-[var(--card)] border border-[var(--border)] text-[var(--text-muted)]"
           }`}
@@ -1823,7 +1836,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           {isSending || isUploading ? (
             <Loader2 size={18} className="animate-spin" />
           ) : (
-            <Send size={18} className={(inputValue.trim() || selectedFile) ? "translate-x-0.5 -translate-y-0.5" : ""} />
+            <Send size={18} className={(inputValue.trim() || selectedFiles.length > 0) ? "translate-x-0.5 -translate-y-0.5" : ""} />
           )}
         </button>
       </div>
