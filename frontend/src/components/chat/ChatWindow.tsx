@@ -2190,7 +2190,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         className={`p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)] ${isMobile ? 'pb-4' : ''} z-[95]`} 
         style={isMobile && isInputFocused ? { 
           position: 'fixed',
-          bottom: `${keyboardHeight > 0 ? keyboardHeight : 0}px`,
+          bottom: `max(0px, env(safe-area-inset-bottom, 0px))`, // Always 0 (or safe area) when keyboard is visible, so input sits right above keyboard
           left: 0,
           right: 0,
           paddingBottom: `max(1rem, calc(1rem + env(safe-area-inset-bottom, 0px)))`,
