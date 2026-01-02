@@ -23,9 +23,12 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     }
 
     try {
+      const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
+      
       const redisConfig: any = {
         host: redisHost,
         port: redisPort,
+        connectTimeout: nodeEnv === 'production' ? 10000 : 5000, // Longer timeout for production
         retryStrategy: (times: number) => {
           // Exponential backoff with max delay of 5 seconds
           const delay = Math.min(times * 100, 5000);
@@ -42,8 +45,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         lazyConnect: true, // Don't connect immediately
       };
 
-      if (redisPassword) {
-        redisConfig.password = redisPassword;
+      // Only set password if it's actually provided, not empty, and not just whitespace
+      // Works for both dev (localhost, no password) and prod (redis service name, with password)
+      if (redisPassword && typeof redisPassword === 'string' && redisPassword.trim().length > 0) {
+        redisConfig.password = redisPassword.trim();
       }
 
       this.client = new Redis(redisConfig);
@@ -286,6 +291,45 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async invalidateUserPresence(userId: string) {
     return this.delete(`presence:${userId}`);
+  }
+
+  // Cache conversation metadata (TTL: 5 minutes)
+  async getCachedConversation(conversationId: string, userId: string) {
+    return this.get(`conversation:${conversationId}:${userId}`);
+  }
+
+  async setCachedConversation(conversationId: string, userId: string, data: any, ttlSeconds = 300) {
+    return this.set(`conversation:${conversationId}:${userId}`, data, ttlSeconds);
+  }
+
+  async invalidateConversation(conversationId: string) {
+    // Delete all conversation-related cache keys
+    await Promise.all([
+      this.deletePattern(`conversation:${conversationId}:*`),
+      this.delete(`conversation:participants:${conversationId}`),
+    ]);
+  }
+
+  // Cache participants list (TTL: 5 minutes)
+  async getCachedParticipants(conversationId: string) {
+    return this.get(`conversation:participants:${conversationId}`);
+  }
+
+  async setCachedParticipants(conversationId: string, participants: any[], ttlSeconds = 300) {
+    return this.set(`conversation:participants:${conversationId}`, participants, ttlSeconds);
+  }
+
+  // Cache user contacts (TTL: 10 minutes)
+  async getCachedContacts(userId: string) {
+    return this.get(`contacts:${userId}`);
+  }
+
+  async setCachedContacts(userId: string, contacts: any[], ttlSeconds = 600) {
+    return this.set(`contacts:${userId}`, contacts, ttlSeconds);
+  }
+
+  async invalidateContacts(userId: string) {
+    return this.delete(`contacts:${userId}`);
   }
 }
 

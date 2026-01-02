@@ -2,8 +2,10 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as cookieParser from 'cookie-parser';
+import * as compression from 'compression';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { RedisIoAdapter } from './shared/adapters/redis-io.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -26,6 +28,20 @@ async function bootstrap() {
   // Security
   app.use(helmet());
   app.use(cookieParser());
+
+  // Response compression (gzip/brotli)
+  app.use(compression({
+    filter: (req, res) => {
+      // Don't compress if client explicitly requests no compression
+      if (req.headers['x-no-compression']) {
+        return false;
+      }
+      // Use default compression filter
+      return compression.filter(req, res);
+    },
+    threshold: 1024, // Only compress responses larger than 1KB
+    level: 6, // Compression level (1-9, 6 is good balance)
+  }));
 
   // CORS - Allow frontend origins
   app.enableCors({
@@ -61,6 +77,11 @@ async function bootstrap() {
 
   // Global prefix
   app.setGlobalPrefix('api');
+
+  // Setup Redis adapter for Socket.io (enable horizontal scaling)
+  const redisAdapter = new RedisIoAdapter(app, configService);
+  await redisAdapter.connectToRedis();
+  app.useWebSocketAdapter(redisAdapter);
 
   const port = configService.get('PORT') || 3001;
   await app.listen(port);

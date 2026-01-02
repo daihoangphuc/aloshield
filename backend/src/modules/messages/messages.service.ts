@@ -59,8 +59,11 @@ export class MessagesService {
       }
     }
 
-    // Invalidate messages cache for this conversation (non-blocking)
-    this.redisService.invalidateMessages(dto.conversationId).catch(err => 
+    // Invalidate caches for this conversation (non-blocking)
+    Promise.all([
+      this.redisService.invalidateMessages(dto.conversationId),
+      this.redisService.invalidateConversation(dto.conversationId),
+    ]).catch(err => 
       console.error('Cache invalidation error (non-fatal):', err)
     );
 

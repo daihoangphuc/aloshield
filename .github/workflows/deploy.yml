@@ -177,10 +177,42 @@ jobs:
             
             # Check if Redis should be started (if REDIS_HOST=redis in backend/.env)
             if grep -q "^REDIS_HOST=redis" backend/.env; then
-              echo "Starting Redis service..."
+              echo "Starting Redis service with password from backend/.env..."
+              
+              # Verify REDIS_PASSWORD is set in .env
+              if ! grep -q "^REDIS_PASSWORD=" backend/.env; then
+                echo "⚠ WARNING: REDIS_PASSWORD not found in backend/.env"
+              else
+                REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" backend/.env | sed 's/^REDIS_PASSWORD=//' | tr -d '\r' | xargs)
+                if [ -z "$REDIS_PASSWORD" ]; then
+                  echo "⚠ WARNING: REDIS_PASSWORD is empty in backend/.env - Redis will start WITHOUT password"
+                else
+                  echo "✓ REDIS_PASSWORD found in backend/.env (length: ${#REDIS_PASSWORD} chars)"
+                fi
+              fi
+              
+              # Stop and remove existing Redis container to ensure fresh start with new password
+              sudo docker stop aloshield-redis 2>/dev/null || true
+              sudo docker rm aloshield-redis 2>/dev/null || true
+              
+              # Start Redis with new configuration
               sudo -E docker compose up -d redis
               echo "Waiting for Redis to be ready..."
               sleep 5
+              
+              # Verify Redis is running and password works
+              if grep -q "^REDIS_PASSWORD=" backend/.env; then
+                REDIS_PASSWORD=$(grep "^REDIS_PASSWORD=" backend/.env | sed 's/^REDIS_PASSWORD=//' | tr -d '\r' | xargs)
+                if [ -n "$REDIS_PASSWORD" ]; then
+                  echo "Verifying Redis password is working..."
+                  if sudo docker exec aloshield-redis redis-cli -a "$REDIS_PASSWORD" ping 2>/dev/null | grep -q "PONG"; then
+                    echo "✓ Redis password verified successfully"
+                  else
+                    echo "✗ ERROR: Redis password verification failed - check Redis logs"
+                    sudo docker logs aloshield-redis --tail 20
+                  fi
+                fi
+              fi
             else
               echo "Redis not configured (REDIS_HOST != redis) - skipping Redis service"
             fi

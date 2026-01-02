@@ -61,6 +61,17 @@ export class ConversationsService {
   }
 
   async getConversationById(conversationId: string, userId: string) {
+    // Check cache first
+    const cacheKey = `conversation:${conversationId}:${userId}`;
+    try {
+      const cached = await this.redisService.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+    } catch (error) {
+      // Cache miss or error - continue to DB query
+    }
+
     const supabase = this.supabaseService.getAdminClient();
 
     // Verify user is participant
@@ -69,6 +80,7 @@ export class ConversationsService {
       throw new ForbiddenException('You are not a participant of this conversation');
     }
 
+    // Get conversation with participants
     const { data: conversation, error } = await supabase
       .from('conversations')
       .select(`
@@ -97,40 +109,42 @@ export class ConversationsService {
     if (error) throw error;
     if (!conversation) throw new NotFoundException('Conversation not found');
 
-    // Get last message
-    const { data: lastMessages } = await supabase
-      .from('messages')
-      .select(`
-        id,
-        encrypted_content,
-        content_type,
-        sender_id,
-        status,
-        created_at,
-        sender:users!sender_id (
-          id,
-          username,
-          display_name
-        )
-      `)
-      .eq('conversation_id', conversationId)
-      .is('deleted_at', null)
-      .order('created_at', { ascending: false })
-      .limit(1);
-    
-    const lastMessage = lastMessages?.[0] || null;
-
-    // Get unread count
+    // Get last message and unread count in parallel
     const myParticipant = conversation.conversation_participants.find(
       (p: any) => p.user_id === userId
     );
 
-    const { count: unreadCount } = await supabase
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('conversation_id', conversationId)
-      .neq('sender_id', userId)
-      .gt('created_at', myParticipant?.last_read_at || '1970-01-01');
+    const [lastMessageResult, unreadCountResult] = await Promise.all([
+      supabase
+        .from('messages')
+        .select(`
+          id,
+          encrypted_content,
+          content_type,
+          sender_id,
+          status,
+          created_at,
+          sender:users!sender_id (
+            id,
+            username,
+            display_name
+          )
+        `)
+        .eq('conversation_id', conversationId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('conversation_id', conversationId)
+        .neq('sender_id', userId)
+        .gt('created_at', myParticipant?.last_read_at || '1970-01-01'),
+    ]);
+
+    const lastMessage = lastMessageResult.data || null;
+    const unreadCount = unreadCountResult.count || 0;
 
     // Get other participant for direct chats
     const otherParticipant = conversation.conversation_participants.find(
@@ -153,10 +167,15 @@ export class ConversationsService {
         user: p.users,
       })),
       last_message: lastMessage,
-      unread_count: unreadCount || 0,
+      unread_count: unreadCount,
       created_at: conversation.created_at,
       updated_at: conversation.updated_at,
     };
+
+    // Cache for 5 minutes (non-blocking)
+    this.redisService.set(cacheKey, result, 300).catch(err => 
+      console.error('Cache set error (non-fatal):', err)
+    );
 
     return result;
   }
@@ -180,73 +199,199 @@ export class ConversationsService {
 
     const supabase = this.supabaseService.getAdminClient();
 
-    // Get all conversation IDs for user
-    // Try with deleted_at filter first, fallback to without if column doesn't exist
-    let participations: any[] | null = null;
-    let error: any = null;
-
-    // First try with deleted_at filter (for soft delete support)
-    const result = await supabase
+    // Optimized: Single query to get all conversations with participants
+    // Try with deleted_at filter first, fallback if column doesn't exist
+    let participationsQuery = supabase
       .from('conversation_participants')
-      .select('conversation_id, deleted_at')
-      .eq('user_id', userId);
+      .select(`
+        conversation_id,
+        last_read_at,
+        deleted_at,
+        conversations!inner (
+          id,
+          type,
+          name,
+          avatar_url,
+          created_at,
+          updated_at,
+          conversation_participants!inner (
+            user_id,
+            last_read_at,
+            users (
+              id,
+              username,
+              display_name,
+              avatar_url,
+              is_online,
+              last_seen_at
+            )
+          )
+        )
+      `)
+      .eq('user_id', userId)
+      .order('conversations(updated_at)', { ascending: false });
 
-    if (result.error) {
-      // If error (column might not exist), try without the filter
-      console.error('Error fetching with deleted_at:', result.error.message);
-      const fallbackResult = await supabase
+    const { data: participations, error: participationsError } = await participationsQuery;
+
+    if (participationsError) {
+      // Fallback: try without deleted_at column
+      const fallbackQuery = supabase
         .from('conversation_participants')
-        .select('conversation_id')
-        .eq('user_id', userId);
+        .select(`
+          conversation_id,
+          last_read_at,
+          conversations!inner (
+            id,
+            type,
+            name,
+            avatar_url,
+            created_at,
+            updated_at,
+            conversation_participants!inner (
+              user_id,
+              last_read_at,
+              users (
+                id,
+                username,
+                display_name,
+                avatar_url,
+                is_online,
+                last_seen_at
+              )
+            )
+          )
+        `)
+        .eq('user_id', userId)
+        .order('conversations(updated_at)', { ascending: false });
+
+      const fallbackResult = await fallbackQuery;
+      if (fallbackResult.error) throw fallbackResult.error;
       
-      participations = fallbackResult.data;
-      error = fallbackResult.error;
-    } else {
-      // Filter out soft-deleted conversations
-      participations = result.data?.filter((p: any) => !p.deleted_at) || [];
-      error = null;
+      const filtered = fallbackResult.data?.filter((p: any) => !p.deleted_at) || [];
+      return this.processConversationsList(filtered, userId, limit, offset);
     }
 
-    if (error) throw error;
     if (!participations || participations.length === 0) {
       return { conversations: [], total: 0 };
     }
 
-    const conversationIds = participations.map(p => p.conversation_id);
+    // Filter out soft-deleted conversations
+    const activeParticipations = participations.filter((p: any) => !p.deleted_at);
+    
+    return this.processConversationsList(activeParticipations, userId, limit, offset);
+  }
 
-    // Get conversations with details
-    const conversations = await Promise.all(
-      conversationIds.map(id => 
-        this.getConversationById(id, userId).catch((err) => {
-          console.error(`❌ Error loading conversation ${id}:`, err.message);
-          return null;
-        })
-      )
+  private async processConversationsList(
+    participations: any[],
+    userId: string,
+    limit: number,
+    offset: number,
+  ) {
+    const supabase = this.supabaseService.getAdminClient();
+    const conversationIds = participations.map(p => p.conversations.id);
+
+    // Batch load last messages for all conversations
+    const { data: lastMessages } = await supabase
+      .from('messages')
+      .select(`
+        conversation_id,
+        id,
+        encrypted_content,
+        content_type,
+        sender_id,
+        status,
+        created_at,
+        sender:users!sender_id (
+          id,
+          username,
+          display_name
+        )
+      `)
+      .in('conversation_id', conversationIds)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+
+    // Group last messages by conversation_id (get most recent per conversation)
+    const lastMessagesMap = new Map<string, any>();
+    if (lastMessages) {
+      for (const msg of lastMessages) {
+        if (!lastMessagesMap.has(msg.conversation_id)) {
+          lastMessagesMap.set(msg.conversation_id, msg);
+        }
+      }
+    }
+
+    // Batch load unread counts for all conversations
+    const unreadCounts = await Promise.all(
+      participations.map(async (p) => {
+        const conv = p.conversations;
+        const myParticipant = conv.conversation_participants.find(
+          (cp: any) => cp.user_id === userId
+        );
+        
+        const { count } = await supabase
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('conversation_id', conv.id)
+          .neq('sender_id', userId)
+          .gt('created_at', myParticipant?.last_read_at || p.last_read_at || '1970-01-01');
+        
+        return { conversationId: conv.id, count: count || 0 };
+      })
     );
 
-    // Filter null values and sort by updated_at
-    const validConversations = conversations
-      .filter((c): c is NonNullable<typeof c> => c !== null && c !== undefined)
-      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    const unreadCountsMap = new Map(
+      unreadCounts.map(u => [u.conversationId, u.count])
+    );
 
-    // Ensure offset and limit are numbers
+    // Transform data
+    const conversations = participations.map((p) => {
+      const conv = p.conversations;
+      const lastMessage = lastMessagesMap.get(conv.id) || null;
+      const unreadCount = unreadCountsMap.get(conv.id) || 0;
+
+      const otherParticipant = conv.conversation_participants.find(
+        (cp: any) => cp.user_id !== userId
+      );
+      const otherUser = otherParticipant?.users;
+
+      return {
+        id: conv.id,
+        type: conv.type,
+        name: conv.type === 'direct' 
+          ? (otherUser?.display_name || otherUser?.username || 'Unknown')
+          : conv.name,
+        avatar_url: conv.type === 'direct' ? otherUser?.avatar_url : conv.avatar_url,
+        participants: conv.conversation_participants.map((cp: any) => ({
+          user_id: cp.user_id,
+          last_read_at: cp.last_read_at,
+          user: cp.users,
+        })),
+        last_message: lastMessage,
+        unread_count: unreadCount,
+        created_at: conv.created_at,
+        updated_at: conv.updated_at,
+      };
+    });
+
+    // Already sorted by updated_at from query, but ensure it's correct
+    conversations.sort((a, b) => 
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
+
     const safeOffset = Number(offset) || 0;
     const safeLimit = Number(limit) || 50;
 
     const finalResult = {
-      conversations: validConversations.slice(safeOffset, safeOffset + safeLimit),
-      total: validConversations.length,
+      conversations: conversations.slice(safeOffset, safeOffset + safeLimit),
+      total: conversations.length,
     };
 
     // Cache the full list if offset is 0 (first page)
-    // Use try-catch to ensure cache errors don't break the request
     if (offset === 0) {
-      try {
-        await this.redisService.setCachedConversations(userId, validConversations, 300); // 5 minutes TTL
-      } catch (error) {
-        // Cache failures are non-fatal - log but don't throw
-        console.error('Cache set error (non-fatal):', error);
-      }
+      this.redisService.setCachedConversations(userId, conversations, 300).catch(err => 
+        console.error('Cache set error (non-fatal):', err)
+      );
     }
 
     return finalResult;

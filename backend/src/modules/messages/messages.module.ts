@@ -6,6 +6,7 @@ import { MessagesService } from './messages.service';
 import { MessagesGateway } from './messages.gateway';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { UsersModule } from '../users/users.module';
+import { SharedModule } from '../../shared/shared.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { UsersModule } from '../users/users.module';
       }),
       inject: [ConfigService],
     }),
+    SharedModule, // Provides RedisService
     ConversationsModule,
     UsersModule,
   ],

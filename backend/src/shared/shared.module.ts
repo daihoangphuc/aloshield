@@ -3,11 +3,13 @@ import { SupabaseService } from './services/supabase.service';
 import { R2Service } from './services/r2.service';
 import { RedisService } from './services/redis.service';
 import { EmailService } from './services/email.service';
+import { QueueModule } from './queue/queue.module';
 
 @Global()
 @Module({
+  imports: [QueueModule],
   providers: [SupabaseService, R2Service, RedisService, EmailService],
-  exports: [SupabaseService, R2Service, RedisService, EmailService],
+  exports: [SupabaseService, R2Service, RedisService, EmailService, QueueModule],
 })
 export class SharedModule {}
 

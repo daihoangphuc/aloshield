@@ -7,11 +7,17 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    env_file:
+      # Read REDIS_PASSWORD from backend/.env
+      # If not set or empty, Redis will run without password
+      - ./backend/.env
     command: >
       sh -c "
-      if [ -n \"$$REDIS_PASSWORD\" ]; then
+      if [ -n \"$$REDIS_PASSWORD\" ] && [ \"$$REDIS_PASSWORD\" != \"\" ]; then
+        echo \"Starting Redis with password protection...\"
         redis-server --requirepass \"$$REDIS_PASSWORD\"
       else
+        echo \"WARNING: Starting Redis WITHOUT password (REDIS_PASSWORD not set or empty)\"
         redis-server
       fi
       "

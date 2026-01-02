@@ -23,7 +23,7 @@ export class EmailService {
     const smtpPassword = this.configService.get<string>('SMTP_PASSWORD')?.trim().replace(/\s+/g, ''); // Remove all spaces
     const smtpSecure = this.configService.get<boolean>('SMTP_SECURE', false);
 
-    // Debug logging (hide password)
+    // Only initialize and log if SMTP is configured
     if (smtpHost && smtpPort && smtpUser && smtpPassword) {
       this.logger.log(`📧 SMTP Config loaded:`);
       this.logger.log(`   Host: ${smtpHost}`);
@@ -31,16 +31,7 @@ export class EmailService {
       this.logger.log(`   Secure: ${smtpSecure}`);
       this.logger.log(`   User: ${smtpUser}`);
       this.logger.log(`   Password length: ${smtpPassword.length} chars`);
-      this.logger.log(`   Password (first 4 chars): ${smtpPassword.substring(0, 4)}****`);
-    } else {
-      this.logger.warn(`⚠️ SMTP config incomplete:`);
-      this.logger.warn(`   Host: ${smtpHost || 'MISSING'}`);
-      this.logger.warn(`   Port: ${smtpPort || 'MISSING'}`);
-      this.logger.warn(`   User: ${smtpUser || 'MISSING'}`);
-      this.logger.warn(`   Password: ${smtpPassword ? `${smtpPassword.length} chars` : 'MISSING'}`);
-    }
 
-    if (smtpHost && smtpPort && smtpUser && smtpPassword) {
       try {
         // For Gmail: Use the simplest possible config
         // Let nodemailer handle all TLS/SSL negotiation automatically
@@ -71,14 +62,9 @@ export class EmailService {
         this.logger.error(`Failed to initialize SMTP transporter: ${error.message}`);
       }
     } else {
-      this.logger.warn('⚠️ SMTP configuration not found in .env file.');
-      this.logger.warn('⚠️ Please add SMTP config to backend/.env:');
-      this.logger.warn('   SMTP_HOST=smtp.gmail.com');
-      this.logger.warn('   SMTP_PORT=587');
-      this.logger.warn('   SMTP_SECURE=false');
-      this.logger.warn('   SMTP_USER=your-email@gmail.com');
-      this.logger.warn('   SMTP_PASSWORD=your-app-password');
-      this.logger.warn('   SMTP_FROM=ALO Shield <your-email@gmail.com>');
+      // SMTP not configured - silently skip (no warnings)
+      // Email will be sent via Supabase Auth if available
+      this.logger.debug('SMTP not configured - will use Supabase Auth for emails');
     }
   }
 

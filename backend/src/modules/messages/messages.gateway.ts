@@ -12,6 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { MessagesService } from './messages.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { RedisService } from '../../shared/services/redis.service';
 
 interface AuthenticatedSocket extends Socket {
   userId: string;
@@ -49,6 +50,7 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
     private usersService: UsersService,
     private messagesService: MessagesService,
     private conversationsService: ConversationsService,
+    private redisService: RedisService,
   ) {}
 
   async handleConnection(client: AuthenticatedSocket) {
@@ -156,24 +158,19 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
       const response = { success: true, message };
 
       // Broadcast to participants asynchronously (don't wait)
-      this.conversationsService.getConversationById(
-        data.conversationId,
-        client.userId,
-      ).then((conversation) => {
-        for (const participant of conversation.participants) {
-          // Emit message to participant
-          this.server.to(`user:${participant.user_id}`).emit('message:new', messagePayload);
-          
-          // If this is a new conversation for the recipient, also send conversation update
-          if (participant.user_id !== client.userId) {
-            this.server.to(`user:${participant.user_id}`).emit('conversation:updated', conversation);
+      // Use cached participants if available, otherwise fetch from DB
+      this.getCachedParticipants(data.conversationId, client.userId)
+        .then((participants) => {
+          for (const participant of participants) {
+            // Emit message to participant
+            this.server.to(`user:${participant.user_id}`).emit('message:new', messagePayload);
           }
-        }
-      }).catch((error) => {
-        console.error('Error broadcasting message:', error);
-        // Still emit to sender as fallback
-        this.server.to(`user:${client.userId}`).emit('message:new', messagePayload);
-      });
+        })
+        .catch((error) => {
+          console.error('Error broadcasting message:', error);
+          // Fallback: emit to sender only
+          this.server.to(`user:${client.userId}`).emit('message:new', messagePayload);
+        });
 
       return response;
     } catch (error) {
@@ -244,7 +241,8 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
       );
 
       // Notify all participants
-      for (const participant of conversation.participants) {
+      const conv = conversation as any;
+      for (const participant of conv.participants) {
         this.server.to(`user:${participant.user_id}`).emit('message:deleted', {
           messageId: data.messageId,
           conversationId: result.conversationId,
@@ -276,7 +274,8 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
         client.userId,
       );
 
-      for (const participant of conversation.participants) {
+      const conv = conversation as any;
+      for (const participant of conv.participants) {
         this.server.to(`user:${participant.user_id}`).emit('message:edited', {
           messageId: data.messageId,
           conversationId: message.conversation_id,
@@ -311,7 +310,8 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
       );
 
       // Notify all participants
-      for (const participant of conversation.participants) {
+      const conv = conversation as any;
+      for (const participant of conv.participants) {
         this.server.to(`user:${participant.user_id}`).emit('message:reaction', {
           messageId: data.messageId,
           conversationId: message.conversation_id,
@@ -346,7 +346,8 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
       );
 
       // Notify all participants
-      for (const participant of conversation.participants) {
+      const conv = conversation as any;
+      for (const participant of conv.participants) {
         this.server.to(`user:${participant.user_id}`).emit('message:reaction', {
           messageId: data.messageId,
           conversationId: message.conversation_id,
@@ -374,7 +375,8 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
       );
 
       // Notify other participants
-      for (const participant of conversation.participants) {
+      const conv = conversation as any;
+      for (const participant of conv.participants) {
         if (participant.user_id !== client.userId) {
           this.server.to(`user:${participant.user_id}`).emit('typing:start', {
             conversationId: data.conversationId,
@@ -401,7 +403,8 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
       );
 
       // Notify other participants
-      for (const participant of conversation.participants) {
+      const conv = conversation as any;
+      for (const participant of conv.participants) {
         if (participant.user_id !== client.userId) {
           this.server.to(`user:${participant.user_id}`).emit('typing:stop', {
             conversationId: data.conversationId,
@@ -437,6 +440,33 @@ export class MessagesGateway implements OnGatewayConnection, OnGatewayDisconnect
   // Check if user is online
   isUserOnline(userId: string): boolean {
     return this.userSockets.has(userId) && (this.userSockets.get(userId)?.size ?? 0) > 0;
+  }
+
+  // Get cached participants or fetch from DB
+  private async getCachedParticipants(conversationId: string, userId: string) {
+    // Try cache first
+    const cached = await this.redisService.getCachedParticipants(conversationId);
+    if (cached && Array.isArray(cached) && cached.length > 0) {
+      return cached;
+    }
+
+    // If not cached, get from DB and cache
+    const conversation = await this.conversationsService.getConversationById(
+      conversationId,
+      userId,
+    );
+
+    const conv = conversation as any;
+    const participants = conv.participants.map((p: any) => ({
+      user_id: p.user_id,
+    }));
+
+    // Cache for 5 minutes (non-blocking)
+    this.redisService.setCachedParticipants(conversationId, participants, 300).catch(() => {
+      // Ignore cache errors
+    });
+
+    return participants;
   }
 }
 
