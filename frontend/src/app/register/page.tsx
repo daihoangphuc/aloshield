@@ -86,7 +86,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <main className="min-h-screen relative flex flex-col items-center justify-center p-4 md:p-6 overflow-x-hidden bg-[var(--background)]">
+    <main className="min-h-screen min-h-[100dvh] relative flex flex-col items-center justify-center p-4 md:p-6 overflow-x-hidden overflow-y-auto bg-[var(--background)]">
       {/* Background decoration */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] right-[-10%] w-[400px] md:w-[600px] h-[400px] md:h-[600px] bg-[var(--accent)]/10 rounded-full blur-[100px] md:blur-[150px] animate-pulse" />

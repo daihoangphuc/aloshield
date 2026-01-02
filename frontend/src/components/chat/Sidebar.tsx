@@ -179,12 +179,29 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
     .filter((u, i, arr) => arr.findIndex(x => x?.id === u?.id) === i) // unique
     .slice(0, 6);
 
+  // Detect mobile
+  const [isMobile, setIsMobile] = useState(false);
+  
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 1024);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   return (
     <div className="flex flex-col w-full h-full bg-[var(--sidebar-bg)] overflow-hidden relative border-r border-[var(--border)]">
-      {/* 1. Header Section - Safe area for mobile */}
+      {/* 1. Header Section - Fixed on mobile to prevent browser UI overlap */}
       <div 
-        className="p-4 md:p-5 flex-shrink-0 space-y-4 md:space-y-5"
-        style={{
+        className={`p-4 md:p-5 flex-shrink-0 space-y-4 md:space-y-5 bg-[var(--sidebar-bg)] ${isMobile ? 'fixed top-0 left-0 right-0 z-30 border-b border-[var(--border)]' : ''}`}
+        style={isMobile ? {
+          paddingTop: 'max(1rem, calc(1rem + env(safe-area-inset-top, 0px)))',
+          paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
+          paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
+          paddingBottom: '1rem',
+        } : {
           paddingTop: 'max(1rem, calc(1rem + env(safe-area-inset-top, 0px)))',
           paddingLeft: 'calc(1rem + env(safe-area-inset-left, 0px))',
           paddingRight: 'calc(1rem + env(safe-area-inset-right, 0px))',
@@ -253,10 +270,13 @@ export function Sidebar({ onConversationSelect }: SidebarProps) {
         </div>
       </div>
 
-      {/* 2. Scrollable Content */}
+      {/* 2. Scrollable Content - Add top padding on mobile to account for fixed header */}
       <div 
         className="flex-1 overflow-y-auto no-scrollbar"
-        style={{
+        style={isMobile ? {
+          paddingTop: 'calc(8rem + env(safe-area-inset-top, 0px))', // Account for fixed header
+          paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))'
+        } : {
           paddingBottom: 'calc(5rem + env(safe-area-inset-bottom, 0px))'
         }}
       >

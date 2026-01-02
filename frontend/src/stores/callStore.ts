@@ -54,6 +54,7 @@ interface CallState {
   toggleMute: () => void;
   toggleVideo: () => void;
   toggleMinimize: () => void;
+  upgradeToVideoCall: () => Promise<void>;
   setLocalStream: (stream: MediaStream | null) => void;
   setRemoteStream: (stream: MediaStream | null) => void;
   setCallDuration: (duration: number) => void;
@@ -171,6 +172,62 @@ export const useCallStore = create<CallState>((set, get) => ({
     set({ isVideoOff: !isVideoOff });
   },
 
+  upgradeToVideoCall: async () => {
+    const { currentCall, localStream, peerConnection } = get();
+    
+    // Only upgrade if currently in audio call
+    if (!currentCall || currentCall.callType !== "audio" || !peerConnection || !localStream) {
+      return;
+    }
+
+    try {
+      console.log("📹 Upgrading audio call to video call");
+      
+      // Get video track
+      const videoStream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720, frameRate: 30 },
+      });
+      
+      const videoTrack = videoStream.getVideoTracks()[0];
+      if (!videoTrack) {
+        throw new Error("Failed to get video track");
+      }
+
+      // Add video track to existing local stream
+      localStream.addTrack(videoTrack);
+      
+      // Add video track to peer connection
+      peerConnection.addTrack(videoTrack, localStream);
+      
+      console.log("📹 Video track added to local stream and peer connection");
+
+      // Update call type
+      set((state) => ({
+        currentCall: state.currentCall
+          ? { ...state.currentCall, callType: "video" }
+          : null,
+        isVideoOff: false,
+      }));
+
+      // Renegotiate peer connection to include video
+      const offer = await peerConnection.createOffer({
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,
+      });
+      
+      await peerConnection.setLocalDescription(offer);
+      
+      // Send new offer to remote peer
+      if (currentCall) {
+        socketManager.sendOffer(currentCall.callId, currentCall.recipientId, offer);
+        console.log("📹 Sent renegotiation offer with video");
+      }
+    } catch (error) {
+      console.error("Failed to upgrade to video call:", error);
+      alert("Không thể mở camera. Vui lòng kiểm tra quyền truy cập camera.");
+    }
+  },
+
   toggleMinimize: () => {
     const { isMinimized } = get();
     set({ isMinimized: !isMinimized });
@@ -255,13 +312,22 @@ export const useCallStore = create<CallState>((set, get) => ({
       console.log("🎥 Track enabled:", event.track.enabled, "Track readyState:", event.track.readyState);
       console.log("🎥 Stream tracks:", event.streams[0]?.getTracks().map(t => ({ kind: t.kind, enabled: t.enabled, readyState: t.readyState })));
       
-      // ✅ Ensure audio tracks are enabled
-      if (event.track.kind === "audio") {
-        event.track.enabled = true;
-        console.log("🔊 Audio track enabled:", event.track.id);
-      }
+      const stream = event.streams[0];
+      if (!stream) return;
       
-      set({ remoteStream: event.streams[0] });
+      // ✅ Ensure ALL audio tracks are enabled
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+        console.log("🔊 Audio track enabled:", track.id, "enabled:", track.enabled);
+      });
+      
+      // ✅ Ensure ALL video tracks are enabled
+      stream.getVideoTracks().forEach((track) => {
+        track.enabled = true;
+        console.log("🎥 Video track enabled:", track.id);
+      });
+      
+      set({ remoteStream: stream });
     };
 
     // Connection state handler

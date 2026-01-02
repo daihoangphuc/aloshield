@@ -55,10 +55,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.01em;
   min-height: 100vh;
+  min-height: 100dvh; /* Use dynamic viewport height for mobile */
 }
 
-/* Only hide overflow on chat page */
+/* Only apply fixed position and overflow hidden on chat page */
 body.chat-page {
+  position: fixed;
+  width: 100%;
   overflow: hidden;
 }
 

@@ -30,6 +30,7 @@ export function VideoCallWindow() {
     toggleMute,
     toggleVideo,
     toggleMinimize,
+    upgradeToVideoCall,
     endCall 
   } = useCallStore();
   const { conversations, setActiveConversation } = useConversationsStore();
@@ -53,13 +54,28 @@ export function VideoCallWindow() {
   useEffect(() => {
     console.log("🎥 Remote stream updated:", remoteStream);
     if (remoteStream) {
+      // ✅ Ensure all audio tracks are enabled
+      remoteStream.getAudioTracks().forEach((track) => {
+        track.enabled = true;
+        console.log("🔊 Ensuring audio track enabled:", track.id, "enabled:", track.enabled);
+      });
+      
       // For video calls, use video element for video AND separate audio element for audio
       if (currentCall?.callType === "video") {
         if (remoteVideoRef.current) {
           console.log("🎥 Setting remote video srcObject");
           remoteVideoRef.current.srcObject = remoteStream;
           remoteVideoRef.current.muted = false; // ✅ Ensure video audio is not muted
-          remoteVideoRef.current.play().catch(e => console.error("Error playing remote video:", e));
+          remoteVideoRef.current.volume = 1.0;
+          remoteVideoRef.current.play().catch(e => {
+            console.error("Error playing remote video:", e);
+            // Retry play if it fails (browser autoplay policy)
+            setTimeout(() => {
+              if (remoteVideoRef.current) {
+                remoteVideoRef.current.play().catch(err => console.error("Retry video play failed:", err));
+              }
+            }, 100);
+          });
         }
         // ✅ Also use separate audio element for video calls to ensure audio plays
         if (remoteVideoAudioRef.current) {
@@ -101,6 +117,9 @@ export function VideoCallWindow() {
       }
       if (remoteVideoAudioRef.current && currentCall?.callType === "video") {
         remoteVideoAudioRef.current.srcObject = null;
+      }
+      if (remoteVideoRef.current && currentCall?.callType === "video") {
+        remoteVideoRef.current.srcObject = null;
       }
     }
   }, [remoteStream, currentCall?.callType]);
@@ -151,7 +170,7 @@ export function VideoCallWindow() {
             autoPlay
             playsInline
             muted={false}
-            className="w-full h-full object-cover"
+            className="w-full h-full object-contain bg-black"
           />
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-[#1a1a1a] to-[#0a0a0a]">
@@ -291,19 +310,34 @@ export function VideoCallWindow() {
             {isMuted ? <MicOff className="w-5 h-5 md:w-6 md:h-6 relative z-10" /> : <Mic className="w-5 h-5 md:w-6 md:h-6" />}
           </button>
 
-          {/* Video toggle button */}
+          {/* Video toggle button - Upgrade to video if audio call, toggle if video call */}
           <button 
-            onClick={(e) => {
+            onClick={async (e) => {
               e.stopPropagation();
-              toggleVideo();
+              if (currentCall?.callType === "audio") {
+                // Upgrade audio call to video call
+                await upgradeToVideoCall();
+              } else {
+                // Toggle video on/off for video calls
+                toggleVideo();
+              }
             }}
             className={`relative p-2.5 md:p-3 rounded-full transition-all duration-300 ${
-              isVideoOff 
+              currentCall?.callType === "audio"
+                ? "bg-[var(--primary)]/20 text-[var(--primary)] ring-2 ring-[var(--primary)]/30 hover:bg-[var(--primary)]/30"
+                : isVideoOff 
                 ? "bg-[var(--danger)]/20 text-[var(--danger)] ring-2 ring-[var(--danger)]/30" 
                 : "bg-white/10 text-white hover:bg-white/20"
             }`}
+            title={currentCall?.callType === "audio" ? "Chuyển sang video call" : isVideoOff ? "Bật camera" : "Tắt camera"}
           >
-            {isVideoOff ? <VideoOff className="w-5 h-5 md:w-6 md:h-6" /> : <Video className="w-5 h-5 md:w-6 md:h-6" />}
+            {currentCall?.callType === "audio" ? (
+              <Video className="w-5 h-5 md:w-6 md:h-6" />
+            ) : isVideoOff ? (
+              <VideoOff className="w-5 h-5 md:w-6 md:h-6" />
+            ) : (
+              <Video className="w-5 h-5 md:w-6 md:h-6" />
+            )}
           </button>
 
           {/* Chat button - Navigate to chat */}

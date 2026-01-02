@@ -475,6 +475,14 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [isTypingLocal, setIsTypingLocal] = useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const inputAreaRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isUserScrolling, setIsUserScrolling] = useState(false);
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const hasInitialScrolledRef = useRef(false); // Track if initial scroll has happened
   
   // File upload state - support multiple files
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -499,7 +507,6 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   const [showStickerPicker, setShowStickerPicker] = useState(false);
   const stickerButtonRef = useRef<HTMLButtonElement>(null);
   const stickerPickerRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // Image modal state
   const [selectedImage, setSelectedImage] = useState<{ url: string; fileName: string } | null>(null);
@@ -550,6 +557,10 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         }));
         setMessages(conversationId, messagesWithContent);
         setHasMore(conversationId, data.hasMore);
+        
+        // ✅ Reset initial scroll flag when messages are loaded
+        hasInitialScrolledRef.current = false;
+        
         await conversationsApi.markAsRead(conversationId);
         updateUnreadCount(conversationId, 0);
         
@@ -602,12 +613,258 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     }
   }, [conversationMessages, conversationId, user?.id]);
 
-  // Auto scroll to bottom
+  // Check if user is near bottom of scroll container
+  const checkIfNearBottom = useCallback(() => {
+    if (!messagesContainerRef.current) return true;
+    const container = messagesContainerRef.current;
+    const scrollTop = container.scrollTop;
+    const scrollHeight = container.scrollHeight;
+    const clientHeight = container.clientHeight;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    // Consider "near bottom" if within 150px (more lenient to prevent unnecessary scrolling)
+    return distanceFromBottom < 150;
+  }, []);
+
+  // Check if last message is visible
+  const isLastMessageVisible = useCallback(() => {
+    if (!messagesEndRef.current || !messagesContainerRef.current) return false;
+    const container = messagesContainerRef.current;
+    const endElement = messagesEndRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const endRect = endElement.getBoundingClientRect();
+    
+    // Check if messagesEndRef is visible within container viewport
+    return (
+      endRect.top >= containerRect.top &&
+      endRect.bottom <= containerRect.bottom + 50 // Allow 50px margin
+    );
+  }, []);
+
+  // Handle scroll events to detect user scrolling
   useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      // ✅ Don't trigger scroll handler during initial load
+      if (!hasInitialScrolledRef.current) return;
+      
+      setIsUserScrolling(true);
+      const isNearBottom = checkIfNearBottom();
+      setShouldAutoScroll(isNearBottom);
+
+      // Clear existing timeout
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+
+      // Reset scrolling state after user stops scrolling
+      scrollTimeoutRef.current = setTimeout(() => {
+        setIsUserScrolling(false);
+        // Re-check if near bottom after scroll stops
+        const stillNearBottom = checkIfNearBottom();
+        // ✅ If user scrolled to bottom, enable auto-scroll
+        // If user scrolled up, disable auto-scroll (user wants to read old messages)
+        setShouldAutoScroll(stillNearBottom);
+        
+        // ✅ If user scrolled back to bottom, ensure last message is visible
+        // Only if initial scroll has completed
+        if (stillNearBottom && messagesEndRef.current && hasInitialScrolledRef.current) {
+          requestAnimationFrame(() => {
+            if (messagesEndRef.current && stillNearBottom) {
+              messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+            }
+          });
+        }
+      }, 150);
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, [checkIfNearBottom]);
+
+  // Scroll to bottom when conversation changes (initial load)
+  useEffect(() => {
+    if (!conversationId || isLoadingMessages) return;
+    
+    // Reset initial scroll flag when conversation changes
+    hasInitialScrolledRef.current = false;
+    setShouldAutoScroll(true);
+    
+    // Always scroll to bottom when opening a conversation
+    const scrollToBottom = () => {
+      if (messagesEndRef.current && !hasInitialScrolledRef.current) {
+        // Use instant scroll for initial load - only once
+        messagesEndRef.current.scrollIntoView({ behavior: "auto", block: "end" });
+        hasInitialScrolledRef.current = true;
+        setShouldAutoScroll(true);
+      }
+    };
+
+    // Wait for messages to render - use longer delay to ensure DOM is ready
+    const timeout = setTimeout(scrollToBottom, 200);
+    return () => {
+      clearTimeout(timeout);
+      hasInitialScrolledRef.current = false;
+    };
+  }, [conversationId, isLoadingMessages]);
+
+  // Auto scroll to bottom when new messages arrive (only if user is near bottom)
+  useEffect(() => {
+    // ✅ Skip auto-scroll on initial load - let the conversation change effect handle it
+    if (!hasInitialScrolledRef.current) {
+      // Wait for initial scroll to complete
+      return;
     }
-  }, [conversationMessages.length, isOtherTyping]);
+    
+    // ✅ ALWAYS scroll when new message arrives if shouldAutoScroll is true
+    // This ensures latest message is always visible
+    if (!shouldAutoScroll) return;
+    
+    // Don't scroll if user is actively scrolling
+    if (isUserScrolling) {
+      // But check again after scroll stops
+      const timeout = setTimeout(() => {
+        if (shouldAutoScroll && messagesEndRef.current && hasInitialScrolledRef.current) {
+          requestAnimationFrame(() => {
+            if (messagesEndRef.current && shouldAutoScroll) {
+              messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+            }
+          });
+        }
+      }, 200);
+      return () => clearTimeout(timeout);
+    }
+    
+    if (messagesEndRef.current) {
+      // Use requestAnimationFrame to ensure DOM is updated
+      requestAnimationFrame(() => {
+        if (messagesEndRef.current && shouldAutoScroll && hasInitialScrolledRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+        }
+      });
+    }
+  }, [conversationMessages.length, isOtherTyping, shouldAutoScroll, isUserScrolling]);
+
+  // Handle mobile keyboard - Track visual viewport changes
+  useEffect(() => {
+    if (!isMobile) return;
+
+    const handleViewportChange = () => {
+      if (window.visualViewport) {
+        const viewport = window.visualViewport;
+        const windowHeight = window.innerHeight;
+        const viewportHeight = viewport.height;
+        const heightDiff = windowHeight - viewportHeight;
+        
+        // Keyboard is visible if viewport height is significantly less than window height
+        if (heightDiff > 150) {
+          setKeyboardHeight(heightDiff);
+        } else {
+          setKeyboardHeight(0);
+        }
+      }
+    };
+
+    // Listen to visual viewport changes (keyboard show/hide)
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewportChange);
+      window.visualViewport.addEventListener('scroll', handleViewportChange);
+    }
+
+    // Fallback: Listen to window resize
+    window.addEventListener('resize', handleViewportChange);
+
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleViewportChange);
+        window.visualViewport.removeEventListener('scroll', handleViewportChange);
+      }
+      window.removeEventListener('resize', handleViewportChange);
+    };
+  }, [isMobile]);
+
+  // Handle input focus/blur to manage fixed positioning
+  useEffect(() => {
+    if (!isMobile || !textareaRef.current) return;
+
+    const textarea = textareaRef.current;
+
+    const handleFocus = () => {
+      setIsInputFocused(true);
+      
+      // ✅ CRITICAL: Always ensure we can see the last message
+      // First, check current state
+      const lastMessageVisible = isLastMessageVisible();
+      const isNearBottom = checkIfNearBottom();
+      
+      // Always enable auto-scroll when focusing input (user wants to see new messages)
+      setShouldAutoScroll(true);
+      
+      // If last message is already visible, do NOT scroll - prevent jumping
+      if (lastMessageVisible) {
+        return; // Exit early, no scrolling needed
+      }
+      
+      // If near bottom but last message not fully visible, scroll smoothly
+      if (isNearBottom) {
+        // Small adjustment to ensure last message is fully visible
+        setTimeout(() => {
+          if (messagesEndRef.current && messagesContainerRef.current) {
+            const container = messagesContainerRef.current;
+            container.scrollTo({
+              top: container.scrollHeight,
+              behavior: 'smooth'
+            });
+          }
+        }, 200);
+        return;
+      }
+      
+      // Last message is NOT visible - scroll to show it
+      // Wait for keyboard to appear first to prevent layout jump
+      setTimeout(() => {
+        if (messagesEndRef.current && messagesContainerRef.current) {
+          const container = messagesContainerRef.current;
+          // Double-check before scrolling
+          const stillNeedScroll = !isLastMessageVisible();
+          if (stillNeedScroll) {
+            container.scrollTo({
+              top: container.scrollHeight,
+              behavior: 'smooth'
+            });
+          }
+        }
+      }, 300);
+    };
+
+    const handleBlur = () => {
+      // Delay blur to allow for potential click events on send button
+      setTimeout(() => {
+        // Check if textarea is still focused (user might have clicked send)
+        if (document.activeElement !== textarea) {
+          setIsInputFocused(false);
+          setKeyboardHeight(0);
+          // ✅ Keep auto-scroll enabled when blurring (user might still want to see new messages)
+          // Only disable if user explicitly scrolls up
+          // Don't change shouldAutoScroll here - let scroll handler manage it
+        }
+      }, 150);
+    };
+
+    textarea.addEventListener('focus', handleFocus);
+    textarea.addEventListener('blur', handleBlur);
+
+    return () => {
+      textarea.removeEventListener('focus', handleFocus);
+      textarea.removeEventListener('blur', handleBlur);
+    };
+  }, [isMobile, checkIfNearBottom, isLastMessageVisible]);
 
   // Handle typing indicator - Memoized with useCallback
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -648,12 +905,17 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       await handleSendMessage();
     }
     
-    // Focus back to textarea after sending
+    // ✅ Always scroll to bottom after sending all
+    setShouldAutoScroll(true);
     setTimeout(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+      }
+      // Focus back to textarea after sending
       if (textareaRef.current) {
         textareaRef.current.focus();
       }
-    }, 0);
+    }, 150);
   };
 
   const handleSendMessage = async () => {
@@ -687,6 +949,14 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
 
     addMessage(tempMessage);
 
+    // ✅ Always scroll to bottom when sending own message
+    setShouldAutoScroll(true);
+    setTimeout(() => {
+      if (messagesEndRef.current) {
+        messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+      }
+    }, 50);
+
     try {
       const sentMessage = await socketManager.sendMessage({
         conversationId,
@@ -718,14 +988,20 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       deleteMessage(conversationId, tempId);
       // Optionally show error to user
       alert("Không thể gửi tin nhắn. Vui lòng thử lại.");
-    } finally {
+      } finally {
       setIsSending(false);
-      // Focus back to textarea after sending
+      
+      // ✅ Ensure scroll to bottom after message is sent
+      setShouldAutoScroll(true);
       setTimeout(() => {
+        if (messagesEndRef.current) {
+          messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+        }
+        // Focus back to textarea after sending
         if (textareaRef.current) {
           textareaRef.current.focus();
         }
-      }, 0);
+      }, 100);
     }
   };
 
@@ -1288,6 +1564,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   return (
     <div 
       className={`flex-1 flex flex-col ${isMobile ? 'h-screen' : 'h-full'} bg-[var(--chat-bg)] relative overflow-hidden`}
+      style={{ height: isMobile ? '100dvh' : '100%' }}
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -1308,7 +1585,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       
       {/* Header - Fixed with safe area for mobile */}
       <header 
-        className={`flex items-center justify-between px-3 md:px-6 border-b border-[var(--border)] bg-[var(--chat-bg)]/80 backdrop-blur-xl flex-shrink-0 z-10 ${isMobile ? 'fixed top-0 left-0 right-0' : ''}`}
+        className={`flex items-center justify-between px-3 md:px-6 border-b border-[var(--border)] bg-[var(--chat-bg)]/95 backdrop-blur-xl flex-shrink-0 ${isMobile ? 'fixed top-0 left-0 right-0 z-30' : 'z-10'}`}
         style={isMobile ? { 
           top: 'env(safe-area-inset-top, 0px)',
           paddingTop: `max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px)))`,
@@ -1316,7 +1593,8 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           paddingLeft: 'calc(0.75rem + env(safe-area-inset-left, 0px))',
           paddingRight: 'calc(0.75rem + env(safe-area-inset-right, 0px))',
           minHeight: '70px',
-          height: 'auto'
+          height: 'auto',
+          boxShadow: '0 2px 10px rgba(0, 0, 0, 0.3)',
         } : {
           height: '80px'
         }}
@@ -1425,7 +1703,10 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           // To be safe, we use: env(safe-area-inset-top) + max(0.75rem, 0.75rem + env(safe-area-inset-top)) + 70px + 0.75rem + 1rem
           // Simplified: calc(env(safe-area-inset-top, 0px) + max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) + 70px + 0.75rem + 1rem)
           // For safety margin, we add extra 1.5rem (24px) to ensure E2EE notice is never covered
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) + 70px + 0.75rem + 1.5rem)'
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) + 70px + 0.75rem + 1.5rem)',
+          // Add padding bottom when input is fixed to prevent messages from being hidden
+          paddingBottom: isInputFocused ? 'calc(5rem + env(safe-area-inset-bottom, 0px))' : undefined,
+          transition: 'padding-bottom 0.2s ease-out',
         } : {
           paddingTop: 'calc(80px + 1.5rem)'
         }}
@@ -1735,9 +2016,11 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           );
         })}
 
-        {/* Typing indicator */}
+        <div ref={messagesEndRef} />
+        
+        {/* Typing indicator - Moved to bottom, right above input area */}
         {isOtherTyping && (
-          <div className="flex items-center gap-2 animate-in">
+          <div className="flex items-center gap-2 animate-in mb-2">
             <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0 bg-gradient-to-br from-[var(--primary)] to-[var(--accent)]">
               {otherParticipant.avatar_url ? (
                 <img src={otherParticipant.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -1756,8 +2039,6 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
             </div>
           </div>
         )}
-
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Security Banner */}
@@ -1919,7 +2200,27 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       )}
 
       {/* Input Area */}
-      <div className={`p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)] ${isMobile ? 'pb-4' : ''}`} style={isMobile ? { paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' } : undefined}>
+      <div 
+        ref={inputAreaRef}
+        className={`p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)] ${isMobile ? 'pb-4' : ''} z-[95]`} 
+        style={isMobile && isInputFocused ? { 
+          position: 'fixed',
+          bottom: `${keyboardHeight > 0 ? keyboardHeight : 0}px`,
+          left: 0,
+          right: 0,
+          paddingBottom: `max(1rem, calc(1rem + env(safe-area-inset-bottom, 0px)))`,
+          paddingLeft: 'calc(0.75rem + env(safe-area-inset-left, 0px))',
+          paddingRight: 'calc(0.75rem + env(safe-area-inset-right, 0px))',
+          transition: 'bottom 0.2s ease-out',
+          boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.3)',
+        } : isMobile ? { 
+          paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
+          position: 'relative',
+          transition: 'bottom 0.2s ease-out',
+        } : {
+          position: 'relative'
+        }}
+      >
         {/* Hidden file inputs - allow multiple files */}
         <input
           ref={imageInputRef}

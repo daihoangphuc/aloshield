@@ -25,11 +25,32 @@ export default function ChatPage() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
 
-  // Add chat-page class to body for overflow control
+  // Add chat-page class to body for overflow control and fix viewport
   useEffect(() => {
     document.body.classList.add("chat-page");
+    
+    // Force viewport recalculation on mobile
+    const handleViewportChange = () => {
+      if (window.visualViewport) {
+        // Trigger layout recalculation
+        document.documentElement.style.setProperty('--vh', `${window.visualViewport.height * 0.01}px`);
+      }
+    };
+    
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleViewportChange);
+      handleViewportChange();
+    }
+    
+    // Also handle window resize
+    window.addEventListener('resize', handleViewportChange);
+    
     return () => {
       document.body.classList.remove("chat-page");
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleViewportChange);
+      }
+      window.removeEventListener('resize', handleViewportChange);
     };
   }, []);
 
@@ -127,12 +148,13 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="h-screen w-full flex bg-[var(--background)] overflow-hidden" suppressHydrationWarning>
+    <div className="h-screen w-full flex bg-[var(--background)] overflow-hidden" suppressHydrationWarning style={{ height: '100dvh' }}>
       {/* Sidebar Container */}
       <aside 
         className={`${
           isMobile && !showSidebar ? "hidden" : "flex"
         } w-full md:w-[320px] lg:w-[380px] xl:w-[420px] flex-shrink-0 h-full border-r border-[var(--border)] z-20 bg-[var(--sidebar-bg)] transition-all duration-300`}
+        style={{ height: '100dvh' }}
       >
         <Sidebar onConversationSelect={() => {
           if (window.innerWidth < 1024) setShowSidebar(false);
@@ -144,6 +166,7 @@ export default function ChatPage() {
         className={`${
           isMobile && showSidebar ? "hidden" : "flex"
         } flex-1 ${isMobile ? 'h-screen' : 'h-full'} flex flex-col relative bg-[var(--chat-bg)] overflow-hidden`}
+        style={{ height: isMobile ? '100dvh' : '100%' }}
       >
         {activeConversationId ? (
           <ChatWindow
