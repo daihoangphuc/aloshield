@@ -763,8 +763,19 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         const heightDiff = windowHeight - viewportHeight;
         
         // Keyboard is visible if viewport height is significantly less than window height
-        if (heightDiff > 150) {
+        if (heightDiff > 100) {
+          // Use viewport height difference as keyboard height
+          // This ensures input area is positioned correctly above keyboard
           setKeyboardHeight(heightDiff);
+          
+          // ✅ Scroll to bottom when keyboard appears to ensure last message is visible
+          if (isInputFocused && messagesEndRef.current) {
+            setTimeout(() => {
+              if (messagesEndRef.current) {
+                messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+              }
+            }, 100);
+          }
         } else {
           setKeyboardHeight(0);
         }
@@ -787,7 +798,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       }
       window.removeEventListener('resize', handleViewportChange);
     };
-  }, [isMobile]);
+  }, [isMobile, isInputFocused]);
 
   // Handle input focus/blur to manage fixed positioning
   useEffect(() => {
@@ -798,49 +809,21 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     const handleFocus = () => {
       setIsInputFocused(true);
       
-      // ✅ CRITICAL: Always ensure we can see the last message
-      // First, check current state
-      const lastMessageVisible = isLastMessageVisible();
-      const isNearBottom = checkIfNearBottom();
-      
       // Always enable auto-scroll when focusing input (user wants to see new messages)
       setShouldAutoScroll(true);
       
-      // If last message is already visible, do NOT scroll - prevent jumping
-      if (lastMessageVisible) {
-        return; // Exit early, no scrolling needed
-      }
-      
-      // If near bottom but last message not fully visible, scroll smoothly
-      if (isNearBottom) {
-        // Small adjustment to ensure last message is fully visible
-        setTimeout(() => {
-          if (messagesEndRef.current && messagesContainerRef.current) {
-            const container = messagesContainerRef.current;
-            container.scrollTo({
-              top: container.scrollHeight,
-              behavior: 'smooth'
-            });
-          }
-        }, 200);
-        return;
-      }
-      
-      // Last message is NOT visible - scroll to show it
-      // Wait for keyboard to appear first to prevent layout jump
+      // ✅ Wait for keyboard to appear, then scroll to ensure last message is visible
+      // Use longer delay to let keyboard fully appear and layout stabilize
       setTimeout(() => {
         if (messagesEndRef.current && messagesContainerRef.current) {
           const container = messagesContainerRef.current;
-          // Double-check before scrolling
-          const stillNeedScroll = !isLastMessageVisible();
-          if (stillNeedScroll) {
-            container.scrollTo({
-              top: container.scrollHeight,
-              behavior: 'smooth'
-            });
-          }
+          // Always scroll to bottom when focusing to ensure last message is visible above keyboard
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior: 'smooth'
+          });
         }
-      }, 300);
+      }, 400); // Longer delay to ensure keyboard is fully visible
     };
 
     const handleBlur = () => {
@@ -1705,7 +1688,9 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           // For safety margin, we add extra 1.5rem (24px) to ensure E2EE notice is never covered
           paddingTop: 'calc(env(safe-area-inset-top, 0px) + max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) + 70px + 0.75rem + 1.5rem)',
           // Add padding bottom when input is fixed to prevent messages from being hidden
-          paddingBottom: isInputFocused ? 'calc(5rem + env(safe-area-inset-bottom, 0px))' : undefined,
+          paddingBottom: isInputFocused 
+            ? `calc(${keyboardHeight > 0 ? keyboardHeight + 80 : 80}px + env(safe-area-inset-bottom, 0px))` 
+            : 'calc(5rem + env(safe-area-inset-bottom, 0px))', // Always add padding to prevent last message from being cut off
           transition: 'padding-bottom 0.2s ease-out',
         } : {
           paddingTop: 'calc(80px + 1.5rem)'
@@ -2211,8 +2196,9 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           paddingBottom: `max(1rem, calc(1rem + env(safe-area-inset-bottom, 0px)))`,
           paddingLeft: 'calc(0.75rem + env(safe-area-inset-left, 0px))',
           paddingRight: 'calc(0.75rem + env(safe-area-inset-right, 0px))',
-          transition: 'bottom 0.2s ease-out',
+          transition: 'bottom 0.3s ease-out',
           boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.3)',
+          zIndex: 100, // Ensure input area is above everything
         } : isMobile ? { 
           paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 0px))',
           position: 'relative',
