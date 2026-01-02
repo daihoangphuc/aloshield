@@ -1,5 +1,6 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { SupabaseService } from '../../shared/services/supabase.service';
+import { RedisService } from '../../shared/services/redis.service';
 import { ConversationsService } from '../conversations/conversations.service';
 
 export interface SendMessageDto {
@@ -20,6 +21,7 @@ export class MessagesService {
   constructor(
     private supabaseService: SupabaseService,
     private conversationsService: ConversationsService,
+    private redisService: RedisService,
   ) {}
 
   async sendMessage(userId: string, dto: SendMessageDto) {
@@ -56,6 +58,11 @@ export class MessagesService {
           .eq('id', attachment.attachmentId);
       }
     }
+
+    // Invalidate messages cache for this conversation (non-blocking)
+    this.redisService.invalidateMessages(dto.conversationId).catch(err => 
+      console.error('Cache invalidation error (non-fatal):', err)
+    );
 
     // Get full message with sender info
     return this.getMessageById(message.id);
@@ -106,16 +113,45 @@ export class MessagesService {
       throw new ForbiddenException('You are not a participant of this conversation');
     }
 
+    // Try to get from cache (only for latest messages without 'before' parameter)
+    if (!before) {
+      try {
+        const cached = await this.redisService.getCachedMessages(conversationId, limit);
+        if (cached && Array.isArray(cached) && cached.length > 0) {
+          return {
+            messages: cached.reverse(), // Oldest first
+            hasMore: cached.length === limit,
+          };
+        }
+      } catch (error) {
+        // If cache fails, continue to database query
+        console.error('Cache get error (non-fatal):', error);
+      }
+    }
+
     const messages = await this.supabaseService.getMessagesByConversation(
       conversationId,
       limit,
       before,
     );
 
-    return {
+    const result = {
       messages: messages.reverse(), // Oldest first
       hasMore: messages.length === limit,
     };
+
+    // Cache latest messages (without 'before' parameter)
+    // Use try-catch to ensure cache errors don't break the request
+    if (!before) {
+      try {
+        await this.redisService.setCachedMessages(conversationId, messages, limit, undefined, 120); // 2 minutes TTL
+      } catch (error) {
+        // Cache failures are non-fatal - log but don't throw
+        console.error('Cache set error (non-fatal):', error);
+      }
+    }
+
+    return result;
   }
 
   async markAsDelivered(messageId: string, userId: string) {
@@ -195,6 +231,12 @@ export class MessagesService {
       .eq('id', messageId);
 
     if (error) throw error;
+
+    // Invalidate messages cache (non-blocking)
+    this.redisService.invalidateMessages(message.conversation_id).catch(err => 
+      console.error('Cache invalidation error (non-fatal):', err)
+    );
+
     return { success: true, conversationId: message.conversation_id };
   }
 
@@ -230,6 +272,11 @@ export class MessagesService {
       .eq('id', messageId);
 
     if (error) throw error;
+
+    // Invalidate messages cache (non-blocking)
+    this.redisService.invalidateMessages(message.conversation_id).catch(err => 
+      console.error('Cache invalidation error (non-fatal):', err)
+    );
     
     return this.getMessageById(messageId);
   }

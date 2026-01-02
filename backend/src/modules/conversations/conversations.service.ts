@@ -1,9 +1,13 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { SupabaseService } from '../../shared/services/supabase.service';
+import { RedisService } from '../../shared/services/redis.service';
 
 @Injectable()
 export class ConversationsService {
-  constructor(private supabaseService: SupabaseService) {}
+  constructor(
+    private supabaseService: SupabaseService,
+    private redisService: RedisService,
+  ) {}
 
   async createDirectConversation(userId: string, participantId: string) {
     const supabase = this.supabaseService.getAdminClient();
@@ -44,6 +48,14 @@ export class ConversationsService {
     // Add both participants
     await this.supabaseService.addParticipant(conversation.id, userId);
     await this.supabaseService.addParticipant(conversation.id, participantId);
+
+    // Invalidate cache for both users (non-blocking)
+    this.redisService.invalidateConversations(userId).catch(err => 
+      console.error('Cache invalidation error (non-fatal):', err)
+    );
+    this.redisService.invalidateConversations(participantId).catch(err => 
+      console.error('Cache invalidation error (non-fatal):', err)
+    );
 
     return this.getConversationById(conversation.id, userId);
   }
@@ -150,6 +162,22 @@ export class ConversationsService {
   }
 
   async getConversations(userId: string, limit = 50, offset = 0) {
+    // Try to get from cache first (only for first page)
+    if (offset === 0) {
+      try {
+        const cached = await this.redisService.getCachedConversations(userId);
+        if (cached && Array.isArray(cached) && cached.length > 0) {
+          return {
+            conversations: cached.slice(0, limit),
+            total: cached.length,
+          };
+        }
+      } catch (error) {
+        // If cache fails, continue to database query
+        console.error('Cache get error (non-fatal):', error);
+      }
+    }
+
     const supabase = this.supabaseService.getAdminClient();
 
     // Get all conversation IDs for user
@@ -205,10 +233,23 @@ export class ConversationsService {
     const safeOffset = Number(offset) || 0;
     const safeLimit = Number(limit) || 50;
 
-    return {
+    const finalResult = {
       conversations: validConversations.slice(safeOffset, safeOffset + safeLimit),
       total: validConversations.length,
     };
+
+    // Cache the full list if offset is 0 (first page)
+    // Use try-catch to ensure cache errors don't break the request
+    if (offset === 0) {
+      try {
+        await this.redisService.setCachedConversations(userId, validConversations, 300); // 5 minutes TTL
+      } catch (error) {
+        // Cache failures are non-fatal - log but don't throw
+        console.error('Cache set error (non-fatal):', error);
+      }
+    }
+
+    return finalResult;
   }
 
   async isParticipant(conversationId: string, userId: string): Promise<boolean> {
@@ -255,6 +296,11 @@ export class ConversationsService {
 
       if (deleteError) throw deleteError;
     }
+
+    // Invalidate cache (non-blocking)
+    this.redisService.invalidateConversations(userId).catch(err => 
+      console.error('Cache invalidation error (non-fatal):', err)
+    );
 
     return { success: true, message: 'Conversation deleted' };
   }

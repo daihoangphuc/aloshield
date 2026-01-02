@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import Cookies from "js-cookie";
 import { useAuthStore } from "@/stores/authStore";
@@ -42,6 +42,33 @@ interface ChatWindowProps {
   onBack: () => void;
   isMobile: boolean;
 }
+
+// Utility functions - moved outside component for better performance
+const formatTime = (dateString: string) => {
+  return new Date(dateString).toLocaleTimeString([], { 
+    hour: '2-digit', 
+    minute: '2-digit' 
+  });
+};
+
+const formatDate = (dateString: string) => {
+  const date = new Date(dateString);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) {
+    return "Hôm nay";
+  } else if (date.toDateString() === yesterday.toDateString()) {
+    return "Hôm qua";
+  } else {
+    return date.toLocaleDateString("vi-VN", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+    });
+  }
+};
 
 // Component for minimized audio call - Banner with return button
 function MinimizedAudioCall({
@@ -292,8 +319,8 @@ function MinimizedVideoCall({
   );
 }
 
-// Component for image message with error handling
-function ImageMessageComponent({ 
+// Component for image message with error handling - Memoized for performance
+export const ImageMessageComponent = memo(function ImageMessageComponent({ 
   attachment, 
   isMe, 
   onImageClick 
@@ -306,13 +333,24 @@ function ImageMessageComponent({
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
+  // Memoize download URL
+  const downloadUrl = useMemo(
+    () => `${config.apiUrl}/attachments/${attachment.id}/download`,
+    [attachment.id]
+  );
+  
+  // Memoize file size display
+  const fileSizeMB = useMemo(
+    () => attachment.file_size ? (attachment.file_size / 1024 / 1024).toFixed(1) : null,
+    [attachment.file_size]
+  );
+  
   // Fetch image with authentication token
   useEffect(() => {
+    let blobUrl: string | null = null;
+    
     const loadImage = async () => {
       try {
-        // Use config.apiUrl which already includes /api
-        const downloadUrl = `${config.apiUrl}/attachments/${attachment.id}/download`;
-        
         // Get token from cookies
         const token = Cookies.get('accessToken');
         
@@ -336,7 +374,7 @@ function ImageMessageComponent({
         
         // Convert to blob URL
         const blob = await response.blob();
-        const blobUrl = URL.createObjectURL(blob);
+        blobUrl = URL.createObjectURL(blob);
         setImageUrl(blobUrl);
         setIsLoading(false);
       } catch (error) {
@@ -348,21 +386,19 @@ function ImageMessageComponent({
     
     loadImage();
     
-    // Cleanup blob URL on unmount
+    // Cleanup blob URL on unmount or when attachment.id changes
     return () => {
-      if (imageUrl) {
-        URL.revokeObjectURL(imageUrl);
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
       }
     };
-  }, [attachment.id]);
+  }, [downloadUrl, attachment.id]);
 
-  const handleImageClick = () => {
+  const handleImageClick = useCallback(() => {
     if (!imageError && imageUrl) {
-      // For modal, we need the original download URL with token
-      const downloadUrl = `${config.apiUrl}/attachments/${attachment.id}/download`;
       onImageClick(downloadUrl, attachment.file_name);
     }
-  };
+  }, [imageError, imageUrl, downloadUrl, attachment.file_name, onImageClick]);
 
   return (
     <div 
@@ -400,17 +436,25 @@ function ImageMessageComponent({
           </div>
         )}
       </div>
-      {attachment.file_size && (
+      {fileSizeMB && (
         <div className="px-3 py-2 flex items-center gap-2 border-t border-[var(--border)] relative z-0">
           <p className="text-xs text-[var(--text-muted)] truncate flex-1">{attachment.file_name}</p>
           <span className="text-[10px] text-[var(--text-muted)]">
-            {(attachment.file_size / 1024 / 1024).toFixed(1)} MB
+            {fileSizeMB} MB
           </span>
         </div>
       )}
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison function for React.memo
+  return (
+    prevProps.attachment.id === nextProps.attachment.id &&
+    prevProps.isMe === nextProps.isMe &&
+    prevProps.attachment.file_name === nextProps.attachment.file_name &&
+    prevProps.attachment.file_size === nextProps.attachment.file_size
+  );
+});
 
 export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps) {
   const { user } = useAuthStore();
@@ -459,25 +503,38 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   // Image modal state
   const [selectedImage, setSelectedImage] = useState<{ url: string; fileName: string } | null>(null);
   
-  // Common emoji reactions
-  const quickEmojis = ["❤️", "😂", "😮", "😢", "😡", "👍"];
+  // Common emoji reactions - Memoized to avoid recreating on each render
+  const quickEmojis = useMemo(() => ["❤️", "😂", "😮", "😢", "😡", "👍"], []);
   
-  // Sticker packs - using emoji as stickers for now
-  const stickerPacks = [
+  // Sticker packs - using emoji as stickers for now - Memoized
+  const stickerPacks = useMemo(() => [
     { name: "Cảm xúc", stickers: ["😀", "😃", "😄", "😁", "😆", "😅", "🤣", "😂", "🙂", "🙃", "😉", "😊", "😇", "🥰", "😍", "🤩", "😘", "😗", "😚", "😙"] },
     { name: "Thú cưng", stickers: ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯", "🦁", "🐮", "🐷", "🐸", "🐵", "🐔", "🐧", "🐦", "🐤", "🦆"] },
     { name: "Thức ăn", stickers: ["🍎", "🍌", "🍇", "🍓", "🍉", "🍑", "🍒", "🥝", "🍅", "🥑", "🍔", "🍕", "🌮", "🌯", "🍗", "🍖", "🥩", "🍟", "🍿", "🍰"] },
     { name: "Hoạt động", stickers: ["⚽", "🏀", "🏈", "⚾", "🎾", "🏐", "🏉", "🎱", "🏓", "🏸", "🥊", "🎯", "🎮", "🎲", "🃏", "🎴", "🎨", "🎭", "🎪", "🎬"] },
     { name: "Biểu tượng", stickers: ["❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️", "💕", "💞", "💓", "💗", "💖", "💘", "💝", "💟", "☮️"] },
-  ];
+  ], []);
 
-  const conversation = conversations.find((c) => c.id === conversationId);
-  const conversationMessages = messages[conversationId] || [];
-  const otherParticipant = conversation?.participants.find(
-    (p) => p.user_id !== user?.id
-  )?.user;
+  // Memoize conversation and related data
+  const conversation = useMemo(
+    () => conversations.find((c) => c.id === conversationId),
+    [conversations, conversationId]
+  );
+  
+  const conversationMessages = useMemo(
+    () => messages[conversationId] || [],
+    [messages, conversationId]
+  );
+  
+  const otherParticipant = useMemo(
+    () => conversation?.participants.find((p) => p.user_id !== user?.id)?.user,
+    [conversation?.participants, user?.id]
+  );
 
-  const isOtherTyping = (typingUsers[conversationId]?.size || 0) > 0;
+  const isOtherTyping = useMemo(
+    () => (typingUsers[conversationId]?.size || 0) > 0,
+    [typingUsers, conversationId]
+  );
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -551,11 +608,12 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     }
   }, [conversationMessages.length, isOtherTyping]);
 
-  // Handle typing indicator
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputValue(e.target.value);
+  // Handle typing indicator - Memoized with useCallback
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInputValue(value);
     
-    if (!isTypingLocal && e.target.value.length > 0) {
+    if (!isTypingLocal && value.length > 0) {
       setIsTypingLocal(true);
       socketManager.startTyping(conversationId);
     }
@@ -565,12 +623,15 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     }
 
     typingTimeoutRef.current = setTimeout(() => {
-      if (isTypingLocal) {
-        setIsTypingLocal(false);
-        socketManager.stopTyping(conversationId);
-      }
+      setIsTypingLocal((prev) => {
+        if (prev) {
+          socketManager.stopTyping(conversationId);
+          return false;
+        }
+        return prev;
+      });
     }, 2000);
-  };
+  }, [conversationId, isTypingLocal]);
 
   // Send both file and text message together
   const handleSendAll = async () => {
@@ -667,29 +728,23 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      handleSendMessage();
-    }
-  };
 
-  const handleDeleteMessage = async (messageId: string) => {
+  const handleDeleteMessage = useCallback(async (messageId: string) => {
     try {
       await socketManager.deleteMessage(messageId);
       setActiveMessageMenu(null);
     } catch (error) {
       console.error("Failed to delete message:", error);
     }
-  };
+  }, []);
 
-  const handleStartEdit = (messageId: string, currentContent: string) => {
+  const handleStartEdit = useCallback((messageId: string, currentContent: string) => {
     setEditingMessageId(messageId);
     setEditingContent(currentContent);
     setActiveMessageMenu(null);
-  };
+  }, []);
 
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = useCallback(async () => {
     if (!editingMessageId || !editingContent.trim()) return;
     
     try {
@@ -699,21 +754,21 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     } catch (error) {
       console.error("Failed to edit message:", error);
     }
-  };
+  }, [editingMessageId, editingContent]);
 
-  const handleCancelEdit = () => {
+  const handleCancelEdit = useCallback(() => {
     setEditingMessageId(null);
     setEditingContent("");
-  };
+  }, []);
 
-  const handleReaction = async (messageId: string, emoji: string) => {
+  const handleReaction = useCallback(async (messageId: string, emoji: string) => {
     try {
       await socketManager.addReaction(messageId, emoji);
       setShowEmojiPicker(null);
     } catch (error) {
       console.error("Failed to add reaction:", error);
     }
-  };
+  }, []);
 
   const handleSelectSticker = (sticker: string) => {
     // Insert sticker into input field instead of sending immediately
@@ -943,7 +998,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     }
   };
 
-  const handleDownloadAttachment = async (attachmentId: string, fileName: string) => {
+  const handleDownloadAttachment = useCallback(async (attachmentId: string, fileName: string) => {
     try {
       // Use backend download endpoint to ensure proper Content-Disposition header
       // This preserves the original file extension and name
@@ -1009,14 +1064,14 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       console.error("Failed to download attachment:", error);
       alert("Không thể tải tệp. Vui lòng thử lại.");
     }
-  };
+  }, []);
 
-  const canEditMessage = (createdAt: string) => {
+  const canEditMessage = useCallback((createdAt: string) => {
     const created = new Date(createdAt);
     const now = new Date();
     const diffMinutes = (now.getTime() - created.getTime()) / (1000 * 60);
     return diffMinutes <= 15;
-  };
+  }, []);
 
   const handleVideoCall = async () => {
     if (!otherParticipant || !conversation) return;
@@ -1075,32 +1130,6 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     } catch (error) {
       console.error("Failed to start audio call:", error);
       alert("Không thể bắt đầu cuộc gọi. Vui lòng thử lại.");
-    }
-  };
-
-  const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    if (date.toDateString() === today.toDateString()) {
-      return "Hôm nay";
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return "Hôm qua";
-    } else {
-      return date.toLocaleDateString("vi-VN", {
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      });
     }
   };
 

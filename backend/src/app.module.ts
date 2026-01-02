@@ -9,6 +9,7 @@ import { AttachmentsModule } from './modules/attachments/attachments.module';
 import { CallsModule } from './modules/calls/calls.module';
 import { KeysModule } from './modules/keys/keys.module';
 import { SharedModule } from './shared/shared.module';
+import { HealthController } from './health.controller';
 
 /**
  * Environment file loading strategy:
@@ -59,6 +60,7 @@ const getEnvFilePath = (): string[] => {
     CallsModule,
     KeysModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}
 
