@@ -640,6 +640,19 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     );
   }, []);
 
+  // Check if scroll is exactly at bottom (within 5px tolerance)
+  const isAtBottom = useCallback(() => {
+    if (!messagesContainerRef.current) return false;
+    const container = messagesContainerRef.current;
+    const scrollTop = container.scrollTop;
+    const scrollHeight = container.scrollHeight;
+    const clientHeight = container.clientHeight;
+    const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+    const distanceFromBottom = maxScrollTop - scrollTop;
+    // Consider "at bottom" if within 5px
+    return distanceFromBottom <= 5;
+  }, []);
+
   // Handle scroll events to detect user scrolling
   useEffect(() => {
     const container = messagesContainerRef.current;
@@ -653,17 +666,31 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       const isNearBottom = checkIfNearBottom();
       setShouldAutoScroll(isNearBottom);
 
-      // ✅ VẤN ĐỀ 1 & 2: Prevent overscroll - don't allow scrolling below last message
-      // This is critical when keyboard is open to prevent messages from being pushed up
+      // ✅ VẤN ĐỀ CRITICAL: Prevent scroll UP when at bottom and keyboard is open
+      // This prevents messages from being pushed up and disappearing
       const container = messagesContainerRef.current;
       if (container) {
         const scrollTop = container.scrollTop;
         const scrollHeight = container.scrollHeight;
         const clientHeight = container.clientHeight;
         const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+        const isAtBottomNow = (maxScrollTop - scrollTop) <= 5;
         
-        // If scrolled beyond bottom (even slightly), immediately snap back to bottom
-        // Use stricter threshold (0.5px instead of 1px) to prevent any overscroll
+        // CRITICAL FIX: When at bottom and keyboard is open, lock scroll position
+        // Prevent any scroll UP that would push messages up
+        if (isAtBottomNow && isInputFocused && keyboardHeight > 0) {
+          // Lock scroll to bottom - prevent any upward scrolling
+          if (scrollTop < maxScrollTop - 1) {
+            requestAnimationFrame(() => {
+              if (container) {
+                container.scrollTop = maxScrollTop;
+              }
+            });
+            return; // Exit early to prevent further processing
+          }
+        }
+        
+        // Prevent overscroll - don't allow scrolling below last message
         if (scrollTop > maxScrollTop + 0.5) {
           // Use requestAnimationFrame to prevent scroll jank
           requestAnimationFrame(() => {
@@ -700,7 +727,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         clearTimeout(scrollTimeoutRef.current);
       }
     };
-  }, [checkIfNearBottom]);
+  }, [checkIfNearBottom, isInputFocused, keyboardHeight]);
 
   // Scroll to bottom when conversation changes (initial load)
   useEffect(() => {
@@ -773,21 +800,24 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
           // Input area uses position: fixed with bottom: 0, so it will naturally sit above keyboard
           setKeyboardHeight(heightDiff);
           
-          // ✅ VẤN ĐỀ 2: When keyboard opens and we're at bottom, lock scroll position
-          // Prevent overscroll that would push messages up
-          if (messagesContainerRef.current && checkIfNearBottom()) {
-            requestAnimationFrame(() => {
-              if (messagesContainerRef.current) {
-                const container = messagesContainerRef.current;
-                const scrollHeight = container.scrollHeight;
-                const clientHeight = container.clientHeight;
-                const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
-                // Lock scroll to bottom if we're near bottom
-                if (container.scrollTop >= maxScrollTop - 10) {
-                  container.scrollTop = maxScrollTop;
+          // ✅ VẤN ĐỀ CRITICAL: When keyboard opens and we're at bottom, lock scroll position
+          // This prevents messages from being pushed up when keyboard appears
+          if (messagesContainerRef.current) {
+            const container = messagesContainerRef.current;
+            const scrollTop = container.scrollTop;
+            const scrollHeight = container.scrollHeight;
+            const clientHeight = container.clientHeight;
+            const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+            const isAtBottomNow = (maxScrollTop - scrollTop) <= 5;
+            
+            // If we're at bottom, lock scroll position immediately
+            if (isAtBottomNow) {
+              requestAnimationFrame(() => {
+                if (messagesContainerRef.current) {
+                  messagesContainerRef.current.scrollTop = maxScrollTop;
                 }
-              }
-            });
+              });
+            }
           }
         } else {
           setKeyboardHeight(0);
@@ -822,10 +852,25 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     const handleFocus = () => {
       setIsInputFocused(true);
       
-      // ❌ REMOVED: No auto-scroll when focusing input
-      // User requirement: When clicking input, interface should stay stable, no scrolling
-      // Input area is fixed at bottom: 0, keyboard will push it up naturally
-      // No need to scroll - let the natural layout handle it
+      // ✅ CRITICAL: When input is focused and we're at bottom, lock scroll immediately
+      // This prevents messages from being pushed up when keyboard opens
+      if (messagesContainerRef.current) {
+        requestAnimationFrame(() => {
+          if (messagesContainerRef.current) {
+            const container = messagesContainerRef.current;
+            const scrollTop = container.scrollTop;
+            const scrollHeight = container.scrollHeight;
+            const clientHeight = container.clientHeight;
+            const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+            const isAtBottomNow = (maxScrollTop - scrollTop) <= 5;
+            
+            // Lock scroll to bottom if we're at bottom
+            if (isAtBottomNow) {
+              container.scrollTop = maxScrollTop;
+            }
+          }
+        });
+      }
     };
 
     const handleBlur = () => {
@@ -850,6 +895,45 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       textarea.removeEventListener('blur', handleBlur);
     };
   }, [isMobile, checkIfNearBottom, isLastMessageVisible]);
+
+  // ✅ CRITICAL FIX: Continuous monitoring to lock scroll when at bottom and keyboard is open
+  // This ensures scroll position stays locked even if user tries to scroll up
+  useEffect(() => {
+    if (!isMobile || !isInputFocused || keyboardHeight === 0) return;
+    
+    const lockScrollPosition = () => {
+      if (!messagesContainerRef.current) return;
+      
+      const container = messagesContainerRef.current;
+      const scrollTop = container.scrollTop;
+      const scrollHeight = container.scrollHeight;
+      const clientHeight = container.clientHeight;
+      const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+      const isAtBottomNow = (maxScrollTop - scrollTop) <= 5;
+      
+      // If we're at bottom, continuously lock scroll position
+      // This prevents any upward scrolling that would push messages up
+      if (isAtBottomNow && scrollTop < maxScrollTop - 1) {
+        container.scrollTop = maxScrollTop;
+      }
+    };
+    
+    // Use a more frequent interval to catch any scroll attempts
+    const interval = setInterval(lockScrollPosition, 50); // Check every 50ms
+    
+    // Also listen to scroll events for immediate response
+    const container = messagesContainerRef.current;
+    if (container) {
+      container.addEventListener('scroll', lockScrollPosition, { passive: true });
+    }
+    
+    return () => {
+      clearInterval(interval);
+      if (container) {
+        container.removeEventListener('scroll', lockScrollPosition);
+      }
+    };
+  }, [isMobile, isInputFocused, keyboardHeight]);
 
   // Handle typing indicator - Memoized with useCallback
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -1688,16 +1772,28 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         ref={messagesContainerRef}
         className="flex-1 min-h-0 overflow-y-auto px-3 md:px-4 space-y-3 no-scrollbar"
         onScroll={(e) => {
-          // ✅ VẤN ĐỀ 1 & 2: Prevent overscroll - don't allow scrolling below last message
-          // Critical when keyboard is open - prevents messages from being pushed up
+          // ✅ VẤN ĐỀ CRITICAL: Prevent scroll UP when at bottom and keyboard is open
+          // This is the main fix - prevents messages from being pushed up when scrolling
           const container = e.currentTarget;
           const scrollTop = container.scrollTop;
           const scrollHeight = container.scrollHeight;
           const clientHeight = container.clientHeight;
           const maxScrollTop = Math.max(0, scrollHeight - clientHeight);
+          const isAtBottomNow = (maxScrollTop - scrollTop) <= 5;
           
-          // If scrolled beyond bottom (even slightly), immediately snap back to bottom
-          // Use stricter threshold (0.5px) to prevent any overscroll, especially when keyboard is open
+          // CRITICAL FIX: When at bottom and keyboard is open, lock scroll position
+          // This prevents any scroll UP that would push messages up and make them disappear
+          if (isAtBottomNow && isInputFocused && keyboardHeight > 0) {
+            // Lock scroll to bottom - prevent any upward scrolling
+            if (scrollTop < maxScrollTop - 1) {
+              requestAnimationFrame(() => {
+                container.scrollTop = maxScrollTop;
+              });
+              return; // Exit early
+            }
+          }
+          
+          // Prevent overscroll - don't allow scrolling below last message
           if (scrollTop > maxScrollTop + 0.5) {
             // Use requestAnimationFrame to prevent scroll jank
             requestAnimationFrame(() => {
