@@ -7,8 +7,109 @@ on:
       - master
   workflow_dispatch:
 
+env:
+  DOCKER_REGISTRY: docker.io
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+
 jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_ACCESS_TOKEN }}
+
+      - name: Extract metadata for backend
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/aloshield-backend
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Extract metadata for frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKER_USERNAME }}/aloshield-frontend
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Extract frontend environment variables from ENV_FE
+        id: frontend-env
+        run: |
+          # Parse ENV_FE to extract NEXT_PUBLIC_* variables
+          # Variables not found will default to empty string
+          echo "${{ secrets.ENV_FE }}" > /tmp/frontend.env
+          
+          # Extract variables (handle cases with = in values by using sed)
+          # If variable doesn't exist, grep returns nothing and we get empty string
+          NEXT_PUBLIC_API_URL=$(grep "^NEXT_PUBLIC_API_URL=" /tmp/frontend.env 2>/dev/null | sed 's/^NEXT_PUBLIC_API_URL=//' | tr -d '\r' | xargs || echo "")
+          NEXT_PUBLIC_WS_URL=$(grep "^NEXT_PUBLIC_WS_URL=" /tmp/frontend.env 2>/dev/null | sed 's/^NEXT_PUBLIC_WS_URL=//' | tr -d '\r' | xargs || echo "")
+          NEXT_PUBLIC_SUPABASE_URL=$(grep "^NEXT_PUBLIC_SUPABASE_URL=" /tmp/frontend.env 2>/dev/null | sed 's/^NEXT_PUBLIC_SUPABASE_URL=//' | tr -d '\r' | xargs || echo "")
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=$(grep "^NEXT_PUBLIC_SUPABASE_ANON_KEY=" /tmp/frontend.env 2>/dev/null | sed 's/^NEXT_PUBLIC_SUPABASE_ANON_KEY=//' | tr -d '\r' | xargs || echo "")
+          NEXT_PUBLIC_GOOGLE_CLIENT_ID=$(grep "^NEXT_PUBLIC_GOOGLE_CLIENT_ID=" /tmp/frontend.env 2>/dev/null | sed 's/^NEXT_PUBLIC_GOOGLE_CLIENT_ID=//' | tr -d '\r' | xargs || echo "")
+          
+          # Export to GITHUB_ENV for use in build-args (empty strings are OK)
+          echo "NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}" >> $GITHUB_ENV
+          echo "NEXT_PUBLIC_WS_URL=${NEXT_PUBLIC_WS_URL}" >> $GITHUB_ENV
+          echo "NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}" >> $GITHUB_ENV
+          echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}" >> $GITHUB_ENV
+          echo "NEXT_PUBLIC_GOOGLE_CLIENT_ID=${NEXT_PUBLIC_GOOGLE_CLIENT_ID}" >> $GITHUB_ENV
+          
+          # Debug output (show only non-empty variables for security)
+          echo "Extracted frontend environment variables from ENV_FE:"
+          [ -n "${NEXT_PUBLIC_API_URL}" ] && echo "  ✓ NEXT_PUBLIC_API_URL is set" || echo "  - NEXT_PUBLIC_API_URL is empty"
+          [ -n "${NEXT_PUBLIC_WS_URL}" ] && echo "  ✓ NEXT_PUBLIC_WS_URL is set" || echo "  - NEXT_PUBLIC_WS_URL is empty"
+          [ -n "${NEXT_PUBLIC_SUPABASE_URL}" ] && echo "  ✓ NEXT_PUBLIC_SUPABASE_URL is set" || echo "  - NEXT_PUBLIC_SUPABASE_URL is empty (optional)"
+          [ -n "${NEXT_PUBLIC_SUPABASE_ANON_KEY}" ] && echo "  ✓ NEXT_PUBLIC_SUPABASE_ANON_KEY is set" || echo "  - NEXT_PUBLIC_SUPABASE_ANON_KEY is empty (optional)"
+          [ -n "${NEXT_PUBLIC_GOOGLE_CLIENT_ID}" ] && echo "  ✓ NEXT_PUBLIC_GOOGLE_CLIENT_ID is set" || echo "  - NEXT_PUBLIC_GOOGLE_CLIENT_ID is empty (optional)"
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/aloshield-backend:latest
+          cache-to: type=inline
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ env.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_WS_URL=${{ env.NEXT_PUBLIC_WS_URL }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ env.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ env.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_GOOGLE_CLIENT_ID=${{ env.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/aloshield-frontend:latest
+          cache-to: type=inline
+
   deploy:
+    needs: build-and-push
     runs-on: ubuntu-latest
 
     steps:
@@ -39,11 +140,11 @@ jobs:
             
             # Pull or clone code
             if [ -d ".git" ]; then
-              echo "📥 Pulling latest code..."
+              echo "Pulling latest code..."
               git fetch origin
               git reset --hard origin/main || git reset --hard origin/master
             else
-              echo "📥 Cloning repository..."
+              echo "Cloning repository..."
               git clone https://github.com/${{ github.repository }}.git .
             fi
           ENDSSH
@@ -53,45 +154,45 @@ jobs:
           scp -i ~/.ssh/deploy_key /tmp/backend.env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/aloshield/backend/.env
           scp -i ~/.ssh/deploy_key /tmp/frontend.env ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/aloshield/frontend/.env
           
-          # Build and start containers
+          # Pull images and start containers
           ssh -i ~/.ssh/deploy_key ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} bash << 'ENDSSH'
             set -e
             cd /opt/aloshield
             
-            # Read frontend env variables from .env file for build args
-            echo "📖 Reading frontend environment variables..."
-            export NEXT_PUBLIC_API_URL=$(grep "^NEXT_PUBLIC_API_URL=" frontend/.env | cut -d '=' -f2- | tr -d '\r' || echo "")
-            export NEXT_PUBLIC_WS_URL=$(grep "^NEXT_PUBLIC_WS_URL=" frontend/.env | cut -d '=' -f2- | tr -d '\r' || echo "")
-            export NEXT_PUBLIC_SUPABASE_URL=$(grep "^NEXT_PUBLIC_SUPABASE_URL=" frontend/.env | cut -d '=' -f2- | tr -d '\r' || echo "")
-            export NEXT_PUBLIC_SUPABASE_ANON_KEY=$(grep "^NEXT_PUBLIC_SUPABASE_ANON_KEY=" frontend/.env | cut -d '=' -f2- | tr -d '\r' || echo "")
-            export NEXT_PUBLIC_GOOGLE_CLIENT_ID=$(grep "^NEXT_PUBLIC_GOOGLE_CLIENT_ID=" frontend/.env | cut -d '=' -f2- | tr -d '\r' || echo "")
+            # Set Docker Hub username for docker-compose
+            export DOCKER_USERNAME="${{ secrets.DOCKER_USERNAME }}"
             
-            echo "🔧 Build args:"
-            echo "  NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL"
-            echo "  NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL"
+            # Login to Docker Hub (if needed)
+            echo "Logging in to Docker Hub..."
+            echo "${{ secrets.DOCKER_ACCESS_TOKEN }}" | sudo docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin || true
             
-            # Build and run with Docker Compose (pass env vars via sudo -E)
-            echo "🐳 Building and starting containers..."
-            sudo docker compose down || true
-            sudo -E bash -c 'docker compose build --no-cache'
+            # Pull latest images
+            echo "Pulling latest images from Docker Hub..."
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/aloshield-backend:latest || true
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/aloshield-frontend:latest || true
+            
+            # Stop and remove old containers
+            echo "Stopping old containers..."
+            sudo -E docker compose down || true
             
             # Check if Redis should be started (if REDIS_HOST=redis in backend/.env)
             if grep -q "^REDIS_HOST=redis" backend/.env; then
-              echo "🔴 Starting Redis service..."
-              sudo docker compose up -d redis
-              echo "⏳ Waiting for Redis to be ready..."
+              echo "Starting Redis service..."
+              sudo -E docker compose up -d redis
+              echo "Waiting for Redis to be ready..."
               sleep 5
             else
-              echo "ℹ️  Redis not configured (REDIS_HOST != redis) - skipping Redis service"
+              echo "Redis not configured (REDIS_HOST != redis) - skipping Redis service"
             fi
             
-            # Start backend and frontend
-            sudo docker compose up -d backend frontend
+            # Start backend and frontend (will pull if not exists)
+            echo "Starting containers..."
+            sudo -E docker compose up -d backend frontend
             
             # Cleanup old images
             sudo docker image prune -f
             
-            echo "✅ Deploy completed!"
+            echo "Deploy completed!"
             sudo docker compose ps
           ENDSSH
           
