@@ -764,17 +764,22 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         
         // Keyboard is visible if viewport height is significantly less than window height
         if (heightDiff > 100) {
-          // Use viewport height difference as keyboard height
-          // This ensures input area is positioned correctly above keyboard
+          // Store keyboard height for padding calculation only
+          // Input area uses position: fixed with bottom: 0, so it will naturally sit above keyboard
           setKeyboardHeight(heightDiff);
           
           // ✅ Scroll to bottom when keyboard appears to ensure last message is visible
+          // Use longer delay to let input area stabilize first
           if (isInputFocused && messagesEndRef.current) {
             setTimeout(() => {
-              if (messagesEndRef.current) {
-                messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
+              if (messagesEndRef.current && messagesContainerRef.current) {
+                const container = messagesContainerRef.current;
+                container.scrollTo({
+                  top: container.scrollHeight,
+                  behavior: 'smooth'
+                });
               }
-            }, 100);
+            }, 200);
           }
         } else {
           setKeyboardHeight(0);
@@ -812,18 +817,22 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       // Always enable auto-scroll when focusing input (user wants to see new messages)
       setShouldAutoScroll(true);
       
-      // ✅ Wait for keyboard to appear, then scroll to ensure last message is visible
-      // Use longer delay to let keyboard fully appear and layout stabilize
-      setTimeout(() => {
-        if (messagesEndRef.current && messagesContainerRef.current) {
-          const container = messagesContainerRef.current;
-          // Always scroll to bottom when focusing to ensure last message is visible above keyboard
-          container.scrollTo({
-            top: container.scrollHeight,
-            behavior: 'smooth'
-          });
-        }
-      }, 400); // Longer delay to ensure keyboard is fully visible
+      // ✅ DON'T scroll immediately - let keyboard appear first
+      // Input area will be fixed at bottom: 0, keyboard will push it up naturally
+      // Only scroll after keyboard is fully visible to ensure last message is visible
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          if (messagesEndRef.current && messagesContainerRef.current) {
+            const container = messagesContainerRef.current;
+            // Scroll to bottom to ensure last message is visible above keyboard
+            container.scrollTo({
+              top: container.scrollHeight,
+              behavior: 'smooth'
+            });
+          }
+        }, 600); // Wait longer for keyboard to fully appear and input area to stabilize
+      });
     };
 
     const handleBlur = () => {
@@ -2190,13 +2199,13 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         className={`p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)] ${isMobile ? 'pb-4' : ''} z-[95]`} 
         style={isMobile && isInputFocused ? { 
           position: 'fixed',
-          bottom: `max(0px, env(safe-area-inset-bottom, 0px))`, // Always 0 (or safe area) when keyboard is visible, so input sits right above keyboard
+          bottom: '0px', // Always 0 - input area sits at bottom of visual viewport, keyboard will be right below it
           left: 0,
           right: 0,
           paddingBottom: `max(1rem, calc(1rem + env(safe-area-inset-bottom, 0px)))`,
           paddingLeft: 'calc(0.75rem + env(safe-area-inset-left, 0px))',
           paddingRight: 'calc(0.75rem + env(safe-area-inset-right, 0px))',
-          transition: 'bottom 0.3s ease-out',
+          transition: 'none', // No transition to prevent jumping - keyboard will push input up naturally
           boxShadow: '0 -4px 20px rgba(0, 0, 0, 0.3)',
           zIndex: 100, // Ensure input area is above everything
         } : isMobile ? { 
