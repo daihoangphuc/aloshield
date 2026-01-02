@@ -653,6 +653,20 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       const isNearBottom = checkIfNearBottom();
       setShouldAutoScroll(isNearBottom);
 
+      // ✅ VẤN ĐỀ 1: Prevent overscroll - don't allow scrolling below last message
+      const container = messagesContainerRef.current;
+      if (container) {
+        const scrollTop = container.scrollTop;
+        const scrollHeight = container.scrollHeight;
+        const clientHeight = container.clientHeight;
+        const maxScrollTop = scrollHeight - clientHeight;
+        
+        // If scrolled beyond bottom, snap back to bottom
+        if (scrollTop > maxScrollTop + 1) {
+          container.scrollTop = maxScrollTop;
+        }
+      }
+
       // Clear existing timeout
       if (scrollTimeoutRef.current) {
         clearTimeout(scrollTimeoutRef.current);
@@ -707,9 +721,33 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     };
   }, [conversationId, isLoadingMessages]);
 
-  // ❌ REMOVED: Auto scroll when new messages arrive
-  // User requirement: Only auto-scroll when opening conversation, not when new messages arrive
-  // This prevents unwanted scrolling when user is reading old messages
+  // ✅ VẤN ĐỀ 3: Auto scroll when new messages arrive (only if user is at bottom)
+  useEffect(() => {
+    // Skip auto-scroll on initial load - let the conversation change effect handle it
+    if (!hasInitialScrolledRef.current) {
+      return;
+    }
+    
+    // Only scroll if user is at bottom (shouldAutoScroll = true)
+    // This ensures we scroll when user is already viewing latest messages
+    if (!shouldAutoScroll) return;
+    
+    // Don't scroll if user is actively scrolling
+    if (isUserScrolling) return;
+    
+    if (messagesEndRef.current && messagesContainerRef.current) {
+      const container = messagesContainerRef.current;
+      // Scroll to bottom to show new message
+      requestAnimationFrame(() => {
+        if (messagesEndRef.current && messagesContainerRef.current && shouldAutoScroll) {
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior: 'smooth'
+          });
+        }
+      });
+    }
+  }, [conversationMessages.length, shouldAutoScroll, isUserScrolling]);
 
   // Handle mobile keyboard - Track visual viewport changes
   useEffect(() => {
@@ -848,6 +886,13 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     if (!inputValue.trim() || isSending || !otherParticipant) return;
     
     const content = inputValue.trim();
+    
+    // ✅ VẤN ĐỀ 2: Keep focus on textarea before clearing input
+    // This prevents the input from losing focus
+    if (textareaRef.current && document.activeElement !== textareaRef.current) {
+      textareaRef.current.focus();
+    }
+    
     setInputValue("");
     setIsSending(true);
 
@@ -875,11 +920,15 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
 
     addMessage(tempMessage);
 
-    // ✅ Always scroll to bottom when sending own message
+    // ✅ VẤN ĐỀ 3: Always scroll to bottom when sending own message
     setShouldAutoScroll(true);
     setTimeout(() => {
-      if (messagesEndRef.current) {
-        messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+      if (messagesEndRef.current && messagesContainerRef.current) {
+        const container = messagesContainerRef.current;
+        container.scrollTo({
+          top: container.scrollHeight,
+          behavior: 'smooth'
+        });
       }
     }, 50);
 
@@ -917,14 +966,19 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       } finally {
       setIsSending(false);
       
-      // ✅ Ensure scroll to bottom after message is sent
+      // ✅ VẤN ĐỀ 3: Ensure scroll to bottom after message is sent
       setShouldAutoScroll(true);
       setTimeout(() => {
-        if (messagesEndRef.current) {
-          messagesEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+        if (messagesEndRef.current && messagesContainerRef.current) {
+          const container = messagesContainerRef.current;
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior: 'smooth'
+          });
         }
-        // Focus back to textarea after sending
-        if (textareaRef.current) {
+        // ✅ VẤN ĐỀ 2: Keep focus on textarea - don't blur and refocus
+        // Focus is already maintained, just ensure it stays
+        if (textareaRef.current && document.activeElement !== textareaRef.current) {
           textareaRef.current.focus();
         }
       }, 100);
@@ -1612,6 +1666,19 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
       <div 
         ref={messagesContainerRef}
         className="flex-1 min-h-0 overflow-y-auto px-3 md:px-4 space-y-3 no-scrollbar"
+        onScroll={(e) => {
+          // ✅ VẤN ĐỀ 1: Prevent overscroll - don't allow scrolling below last message
+          const container = e.currentTarget;
+          const scrollTop = container.scrollTop;
+          const scrollHeight = container.scrollHeight;
+          const clientHeight = container.clientHeight;
+          const maxScrollTop = scrollHeight - clientHeight;
+          
+          // If scrolled beyond bottom, snap back to bottom
+          if (scrollTop > maxScrollTop + 1) {
+            container.scrollTop = maxScrollTop;
+          }
+        }}
         style={isMobile ? {
           // Calculate header height properly:
           // Header is fixed with:
