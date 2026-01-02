@@ -986,30 +986,34 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     }
   };
 
-  // Handle paste event for images
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items;
-      if (!items) return;
+  // Handle paste event for images - only when textarea is focused
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
 
-      const imageFiles: File[] = [];
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].type.indexOf("image") !== -1) {
-          const file = items[i].getAsFile();
-          if (file) {
-            imageFiles.push(file);
-          }
+    const imageFiles: File[] = [];
+    let hasText = false;
+    
+    // Check for images and text in clipboard
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.indexOf("image") !== -1) {
+        const file = item.getAsFile();
+        if (file) {
+          imageFiles.push(file);
         }
+      } else if (item.type === "text/plain") {
+        hasText = true;
       }
-      
-      if (imageFiles.length > 0) {
-        handleFilesFromDrop(imageFiles);
-      }
-    };
-
-    document.addEventListener("paste", handlePaste);
-    return () => document.removeEventListener("paste", handlePaste);
-  }, [handleFilesFromDrop]); // Include handleFilesFromDrop in deps
+    }
+    
+    // If there are images, handle them and prevent default text paste
+    if (imageFiles.length > 0) {
+      e.preventDefault(); // Prevent default text paste
+      handleFilesFromDrop(imageFiles);
+    }
+    // If only text, allow default paste behavior
+  }, [handleFilesFromDrop]);
 
   // Close sticker picker when clicking outside
   useEffect(() => {
@@ -1406,19 +1410,28 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
         className="flex-1 min-h-0 overflow-y-auto px-3 md:px-4 space-y-3 no-scrollbar"
         style={isMobile ? {
           // Calculate header height properly:
-          // Header top position: env(safe-area-inset-top, 0px)
-          // Header paddingTop: max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) ≈ 0.75rem + env(safe-area-inset-top, 0px) in worst case
-          // Header minHeight: 70px
-          // Header paddingBottom: 0.75rem
-          // Total header height ≈ env(safe-area-inset-top, 0px) + 0.75rem + 70px + 0.75rem = env(safe-area-inset-top, 0px) + 72.5px
-          // Add extra 1rem for spacing
-          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 72.5px + 1rem)'
+          // Header is fixed with:
+          //   - top: env(safe-area-inset-top, 0px) - position from top of viewport
+          //   - paddingTop: max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px)))
+          //     When safe-area-inset-top > 0: paddingTop = 0.75rem + env(safe-area-inset-top)
+          //     When safe-area-inset-top = 0: paddingTop = 0.75rem
+          //   - minHeight: 70px (content height)
+          //   - paddingBottom: 0.75rem
+          // Total header height from top of viewport:
+          //   = env(safe-area-inset-top) + max(0.75rem, 0.75rem + env(safe-area-inset-top)) + 70px + 0.75rem
+          //   = env(safe-area-inset-top) + (0.75rem + env(safe-area-inset-top)) + 70px + 0.75rem (worst case)
+          //   = 2 * env(safe-area-inset-top) + 72.5px
+          // But when safe-area-inset-top = 0: = 0 + 0.75rem + 70px + 0.75rem = 72.5px
+          // To be safe, we use: env(safe-area-inset-top) + max(0.75rem, 0.75rem + env(safe-area-inset-top)) + 70px + 0.75rem + 1rem
+          // Simplified: calc(env(safe-area-inset-top, 0px) + max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) + 70px + 0.75rem + 1rem)
+          // For safety margin, we add extra 1.5rem (24px) to ensure E2EE notice is never covered
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) + 70px + 0.75rem + 1.5rem)'
         } : {
-          paddingTop: 'calc(80px + 1rem)'
+          paddingTop: 'calc(80px + 1.5rem)'
         }}
       >
         {/* E2EE Notice */}
-        <div className="flex justify-center mb-4 md:mb-6 pt-2">
+        <div className="flex justify-center mb-4 md:mb-6 pt-2 md:pt-2">
           <div className="glass-card p-3 md:p-4 rounded-2xl max-w-[90%] md:max-w-[85%] flex items-start gap-2 md:gap-3">
             <Lock size={14} className="text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
             <p className="text-[11px] md:text-[12px] text-[var(--text-muted)] leading-relaxed">
@@ -1957,6 +1970,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
                 e.target.style.height = 'inherit';
                 e.target.style.height = `${Math.min(e.target.scrollHeight, 96)}px`;
               }}
+              onPaste={handlePaste}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
