@@ -26,7 +26,8 @@ ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
 ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
-ENV NODE_ENV=production
+# Don't set NODE_ENV=production here - Next.js build needs dev dependencies
+# NODE_ENV will be set in runner stage for production runtime
 ENV NEXT_TELEMETRY_DISABLED=1
 
 # Install all dependencies (including devDependencies for build)

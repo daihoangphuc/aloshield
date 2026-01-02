@@ -1,8 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactCompiler: true,
-  // Disable turbopack in production for stability
-  ...(process.env.NODE_ENV === 'development' && { turbopack: {} }),
+  // Disable turbopack completely (causes module resolution issues in Docker)
+  // turbopack: {}, // Disabled for production builds
   
   // Enable standalone output for Docker optimization (smaller image size)
   output: 'standalone',
