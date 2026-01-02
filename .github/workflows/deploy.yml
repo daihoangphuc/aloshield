@@ -74,7 +74,19 @@ jobs:
             echo "🐳 Building and starting containers..."
             sudo docker compose down || true
             sudo -E bash -c 'docker compose build --no-cache'
-            sudo docker compose up -d
+            
+            # Check if Redis should be started (if REDIS_HOST=redis in backend/.env)
+            if grep -q "^REDIS_HOST=redis" backend/.env; then
+              echo "🔴 Starting Redis service..."
+              sudo docker compose up -d redis
+              echo "⏳ Waiting for Redis to be ready..."
+              sleep 5
+            else
+              echo "ℹ️  Redis not configured (REDIS_HOST != redis) - skipping Redis service"
+            fi
+            
+            # Start backend and frontend
+            sudo docker compose up -d backend frontend
             
             # Cleanup old images
             sudo docker image prune -f

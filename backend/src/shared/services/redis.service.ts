@@ -7,65 +7,120 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
   private client: Redis | null = null;
   private isAvailable = false;
+  private lastErrorLogTime = 0;
+  private readonly ERROR_LOG_INTERVAL = 30000; // Log errors max once per 30 seconds
 
   constructor(private configService: ConfigService) {}
 
   async onModuleInit() {
     const redisHost = this.configService.get<string>('REDIS_HOST');
     const redisPort = this.configService.get<number>('REDIS_PORT', 6379);
+    const redisPassword = this.configService.get<string>('REDIS_PASSWORD');
 
     if (!redisHost) {
-      this.logger.warn('Redis not configured - caching will be disabled');
+      this.logger.log('Redis not configured (REDIS_HOST not set) - caching will be disabled');
       return;
     }
 
     try {
-      this.client = new Redis({
+      const redisConfig: any = {
         host: redisHost,
         port: redisPort,
-        retryStrategy: (times) => {
-          const delay = Math.min(times * 50, 2000);
+        retryStrategy: (times: number) => {
+          // Exponential backoff with max delay of 5 seconds
+          const delay = Math.min(times * 100, 5000);
+          // Stop retrying after 10 attempts (about 25 seconds total)
+          if (times > 10) {
+            this.logger.warn('Redis retry limit reached - caching will remain disabled');
+            return null; // Stop retrying
+          }
           return delay;
         },
-        maxRetriesPerRequest: 3,
-      });
+        maxRetriesPerRequest: null, // Disable automatic retries on failed requests
+        enableReadyCheck: true,
+        enableOfflineQueue: false, // Don't queue commands when offline
+        lazyConnect: true, // Don't connect immediately
+      };
+
+      if (redisPassword) {
+        redisConfig.password = redisPassword;
+      }
+
+      this.client = new Redis(redisConfig);
 
       this.client.on('connect', () => {
-        this.logger.log('Redis connected successfully');
-        this.isAvailable = true;
+        this.logger.log(`Redis connecting to ${redisHost}:${redisPort}...`);
       });
 
-      this.client.on('error', (error) => {
-        this.logger.error('Redis connection error:', error);
+      this.client.on('ready', () => {
+        this.logger.log(`Redis connected successfully to ${redisHost}:${redisPort}`);
+        this.isAvailable = true;
+        this.lastErrorLogTime = 0; // Reset error log timer on successful connection
+      });
+
+      this.client.on('error', (error: any) => {
+        const now = Date.now();
+        // Only log errors if enough time has passed since last log
+        if (now - this.lastErrorLogTime > this.ERROR_LOG_INTERVAL) {
+          // Don't log AggregateError details, just a simple message
+          if (error.name === 'AggregateError' || error.message?.includes('AggregateError')) {
+            this.logger.warn(`Redis connection unavailable - caching disabled (will retry silently)`);
+          } else {
+            this.logger.warn(`Redis error: ${error.message || error.name || 'Connection failed'} - caching disabled`);
+          }
+          this.lastErrorLogTime = now;
+        }
         this.isAvailable = false;
       });
 
       this.client.on('close', () => {
-        this.logger.warn('Redis connection closed');
+        // Only log close events occasionally to avoid spam
+        const now = Date.now();
+        if (now - this.lastErrorLogTime > this.ERROR_LOG_INTERVAL) {
+          this.logger.debug('Redis connection closed');
+          this.lastErrorLogTime = now;
+        }
         this.isAvailable = false;
       });
 
-      this.client.on('reconnecting', () => {
-        this.logger.log('Redis reconnecting...');
+      this.client.on('reconnecting', (delay: number) => {
+        // Only log reconnecting occasionally
+        const now = Date.now();
+        if (now - this.lastErrorLogTime > this.ERROR_LOG_INTERVAL) {
+          this.logger.debug(`Redis reconnecting in ${delay}ms...`);
+          this.lastErrorLogTime = now;
+        }
       });
 
-      // Test connection with timeout
+      // Try to connect with timeout
       try {
         await Promise.race([
-          this.client.ping(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Redis ping timeout')), 5000))
+          this.client.connect(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Redis connection timeout')), 10000)
+          )
         ]);
+
+        // Test connection with ping
+        await Promise.race([
+          this.client.ping(),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Redis ping timeout')), 5000)
+          )
+        ]);
+
         this.isAvailable = true;
-        this.logger.log(`Redis connected to ${redisHost}:${redisPort}`);
-      } catch (pingError) {
-        this.logger.warn('Redis ping failed - caching will be disabled', pingError);
+        this.logger.log(`Redis ready and connected to ${redisHost}:${redisPort}`);
+      } catch (pingError: any) {
+        // Initial connection failed - this is expected if Redis is not available
+        this.logger.warn(`Redis not available at ${redisHost}:${redisPort} - caching will be disabled. App will continue without Redis.`);
         this.isAvailable = false;
-        // Don't set client to null here, let it retry in background
+        // Keep client for background retries, but mark as unavailable
       }
-    } catch (error) {
-      this.logger.warn('Redis connection failed - caching disabled', error);
+    } catch (error: any) {
+      this.logger.warn(`Redis initialization failed - caching disabled. App will continue without Redis. Error: ${error.message || error}`);
       this.isAvailable = false;
-      this.client = null;
+      // Don't set client to null, let it retry in background silently
     }
   }
 
@@ -98,17 +153,22 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       try {
         return JSON.parse(value) as T;
       } catch (parseError) {
-        this.logger.error(`Redis GET parse error for key ${key}:`, parseError);
-        // Delete corrupted cache entry
+        // Only log parse errors occasionally
+        const now = Date.now();
+        if (now - this.lastErrorLogTime > this.ERROR_LOG_INTERVAL) {
+          this.logger.warn(`Redis GET parse error for key ${key} - deleting corrupted entry`);
+          this.lastErrorLogTime = now;
+        }
+        // Delete corrupted cache entry silently
         await this.client!.del(key).catch(() => {});
         return null;
       }
     } catch (error: any) {
-      // If connection error, mark as unavailable
-      if (error.message?.includes('Connection') || error.message?.includes('ECONNREFUSED')) {
+      // If connection error, mark as unavailable silently
+      if (error.message?.includes('Connection') || error.message?.includes('ECONNREFUSED') || error.message?.includes('MaxRetriesPerRequest')) {
         this.isAvailable = false;
       }
-      this.logger.error(`Redis GET error for key ${key}:`, error.message || error);
+      // Don't log individual operation errors to avoid spam
       return null;
     }
   }
@@ -126,11 +186,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       }
       return true;
     } catch (error: any) {
-      // If connection error, mark as unavailable
-      if (error.message?.includes('Connection') || error.message?.includes('ECONNREFUSED')) {
+      // If connection error, mark as unavailable silently
+      if (error.message?.includes('Connection') || error.message?.includes('ECONNREFUSED') || error.message?.includes('MaxRetriesPerRequest')) {
         this.isAvailable = false;
       }
-      this.logger.error(`Redis SET error for key ${key}:`, error.message || error);
+      // Don't log individual operation errors to avoid spam
       return false;
     }
   }
@@ -143,11 +203,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       await this.client!.del(key);
       return true;
     } catch (error: any) {
-      // If connection error, mark as unavailable
-      if (error.message?.includes('Connection') || error.message?.includes('ECONNREFUSED')) {
+      // If connection error, mark as unavailable silently
+      if (error.message?.includes('Connection') || error.message?.includes('ECONNREFUSED') || error.message?.includes('MaxRetriesPerRequest')) {
         this.isAvailable = false;
       }
-      this.logger.error(`Redis DELETE error for key ${key}:`, error.message || error);
+      // Don't log individual operation errors to avoid spam
       return false;
     }
   }
@@ -172,11 +232,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
       return deletedCount;
     } catch (error: any) {
-      // If connection error, mark as unavailable
-      if (error.message?.includes('Connection') || error.message?.includes('ECONNREFUSED')) {
+      // If connection error, mark as unavailable silently
+      if (error.message?.includes('Connection') || error.message?.includes('ECONNREFUSED') || error.message?.includes('MaxRetriesPerRequest')) {
         this.isAvailable = false;
       }
-      this.logger.error(`Redis DELETE PATTERN error for ${pattern}:`, error.message || error);
+      // Don't log individual operation errors to avoid spam
       return 0;
     }
   }

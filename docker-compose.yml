@@ -1,4 +1,41 @@
 services:
+  # Redis - Optional caching service
+  # Only used if REDIS_HOST=redis in backend/.env
+  redis:
+    image: redis:7-alpine
+    container_name: aloshield-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      sh -c "
+      if [ -n \"$$REDIS_PASSWORD\" ]; then
+        redis-server --requirepass \"$$REDIS_PASSWORD\"
+      else
+        redis-server
+      fi
+      "
+    volumes:
+      - redis-data:/data
+    networks:
+      - aloshield
+    # Health check
+    healthcheck:
+      test: ["CMD", "sh", "-c", "if [ -n \"$$REDIS_PASSWORD\" ]; then redis-cli -a \"$$REDIS_PASSWORD\" ping; else redis-cli ping; fi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+
   backend:
     build:
       context: ./backend
@@ -79,6 +116,10 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
+
+volumes:
+  redis-data:
+    driver: local
 
 networks:
   aloshield:
