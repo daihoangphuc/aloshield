@@ -2,7 +2,9 @@ import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as argon2 from 'argon2';
+import { v4 as uuidv4 } from 'uuid';
 import { UsersService } from '../users/users.service';
+import { SupabaseService } from '../../shared/services/supabase.service';
 
 export interface GoogleProfile {
   id: string;
@@ -28,6 +30,7 @@ export class AuthService {
     private jwtService: JwtService,
     private configService: ConfigService,
     private usersService: UsersService,
+    private supabaseService: SupabaseService,
   ) {}
 
   async register(data: {
@@ -51,15 +54,92 @@ export class AuthService {
     // Hash password
     const passwordHash = await argon2.hash(data.password);
 
-    // Create user
-    const user = await this.usersService.createUser({
-      email: data.email,
-      username: data.username,
-      display_name: data.displayName || data.username,
-      password_hash: passwordHash,
-    });
+    // Create user in Supabase Auth first (to get supabase_id)
+    const supabase = this.supabaseService.getAdminClient();
+    let supabaseId: string | undefined;
 
-    return user;
+    try {
+      // Create user in Supabase Auth using admin API
+      // This allows us to set password and auto-confirm email
+      console.log(`[Register] Creating user in Supabase Auth: ${data.email}`);
+      const { data: authUser, error: authError } = await supabase.auth.admin.createUser({
+        email: data.email,
+        password: data.password,
+        email_confirm: true, // Auto-confirm email (no need for email verification)
+        user_metadata: {
+          username: data.username,
+          display_name: data.displayName || data.username,
+        },
+      });
+
+      if (authError) {
+        console.error(`[Register] Supabase Auth createUser error:`, authError);
+        // If user already exists in Supabase Auth, try to find and link it
+        if (authError.code === 'email_exists' || authError.message.includes('already registered') || authError.message.includes('User already registered') || authError.message.includes('already exists')) {
+          console.log(`[Register] User already exists in Supabase Auth, trying to find...`);
+          // Try to find user by attempting to get user by email
+          // We'll use a workaround: try to list users with pagination
+          try {
+            const { data: listData, error: listError } = await supabase.auth.admin.listUsers({
+              page: 1,
+              perPage: 1000, // Get first 1000 users
+            });
+            
+            if (!listError && listData?.users) {
+              const foundUser = listData.users.find((u: any) => u.email === data.email);
+              if (foundUser) {
+                supabaseId = foundUser.id;
+                console.log(`[Register] Found existing Supabase Auth user: ${supabaseId}`);
+              } else {
+                console.warn(`[Register] User exists in Auth but not found in first 1000 users`);
+              }
+            } else if (listError) {
+              console.error(`[Register] Error listing users:`, listError);
+            }
+          } catch (listError: any) {
+            console.error(`[Register] Error finding existing user:`, listError?.message || listError);
+            // Continue without supabase_id - email service will handle it later
+          }
+        } else {
+          // Log error but continue (user can still be created in our database)
+          console.warn(`[Register] Failed to create user in Supabase Auth: ${authError.message}`);
+        }
+      } else if (authUser?.user?.id) {
+        supabaseId = authUser.user.id;
+        console.log(`[Register] Successfully created Supabase Auth user: ${supabaseId}`);
+      } else {
+        console.warn(`[Register] Supabase Auth user created but no ID returned`);
+      }
+    } catch (error: any) {
+      // Log error but continue (user can still be created in our database)
+      console.error(`[Register] Error creating user in Supabase Auth:`, error);
+    }
+
+    // Create user in our database (with supabase_id if available)
+    try {
+      console.log(`[Register] Creating user in database with supabase_id: ${supabaseId || 'NULL'}`);
+      const user = await this.usersService.createUser({
+        email: data.email,
+        username: data.username,
+        display_name: data.displayName || data.username,
+        password_hash: passwordHash,
+        supabase_id: supabaseId,
+      });
+
+      console.log(`[Register] User created successfully: ${user.id}, supabase_id: ${user.supabase_id || 'NULL'}`);
+      
+      // If supabase_id was not set but we have it, update it
+      if (!user.supabase_id && supabaseId) {
+        console.log(`[Register] Updating supabase_id for user ${user.id}`);
+        await this.usersService.updateUser(user.id, { supabase_id: supabaseId });
+        user.supabase_id = supabaseId;
+      }
+      
+      return user;
+    } catch (error: any) {
+      console.error(`[Register] Error creating user in database:`, error);
+      throw new BadRequestException(error.message || 'Đăng ký thất bại');
+    }
   }
 
   async login(email: string, password: string) {
@@ -260,6 +340,7 @@ export class AuthService {
     }
     return user;
   }
+
 
   private async generateUniqueUsername(email: string): Promise<string> {
     const baseUsername = email.split('@')[0].toLowerCase().replace(/[^a-z0-9]/g, '');

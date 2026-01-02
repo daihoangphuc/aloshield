@@ -188,5 +188,6 @@ export class AuthController {
       is_online: req.user.is_online,
     };
   }
+
 }
 

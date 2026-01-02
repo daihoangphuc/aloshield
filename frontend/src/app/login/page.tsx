@@ -149,12 +149,6 @@ function LoginContent() {
                 <label className="text-[10px] font-bold text-[var(--text-muted)] uppercase tracking-[0.2em]">
                   Mật khẩu
                 </label>
-                <Link 
-                  href="/forgot-password" 
-                  className="text-[10px] font-bold text-[var(--primary)] uppercase tracking-widest hover:text-[var(--primary-hover)] transition-colors"
-                >
-                  Quên mật khẩu?
-                </Link>
               </div>
               <div className="relative group">
                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)] group-focus-within:text-[var(--primary)] transition-colors" />

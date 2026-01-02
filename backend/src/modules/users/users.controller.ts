@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Patch,
   Param,
   Body,
@@ -33,6 +34,28 @@ export class UsersController {
   async getContacts(@Req() req: any) {
     const contacts = await this.usersService.getContacts(req.user.id);
     return { contacts };
+  }
+
+  @Post('contacts')
+  async addContact(
+    @Req() req: any,
+    @Body() body: { contactId: string; nickname?: string },
+  ) {
+    if (!body.contactId) {
+      return { error: 'contactId is required' };
+    }
+    const contact = await this.usersService.addContact(
+      req.user.id,
+      body.contactId,
+      body.nickname,
+    );
+    return { contact };
+  }
+
+  @Post('contacts/:contactId/remove')
+  async removeContact(@Req() req: any, @Param('contactId') contactId: string) {
+    await this.usersService.removeContact(req.user.id, contactId);
+    return { success: true };
   }
 
   @Get(':id')

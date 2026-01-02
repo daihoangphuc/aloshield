@@ -102,6 +102,7 @@ export class SupabaseService implements OnModuleInit {
     last_seen_at: string;
     google_id: string;
     supabase_id: string;
+    password_hash: string;
   }>) {
     const { data, error } = await this.supabaseAdmin
       .from('users')

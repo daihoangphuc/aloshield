@@ -66,6 +66,7 @@ export class UsersService {
     last_seen_at: string;
     google_id: string;
     supabase_id: string;
+    password_hash: string;
   }>) {
     return this.supabaseService.updateUser(id, userData);
   }
@@ -83,6 +84,56 @@ export class UsersService {
 
   async getContacts(userId: string) {
     return this.supabaseService.getContacts(userId);
+  }
+
+  async addContact(userId: string, contactId: string, nickname?: string) {
+    // Check if contact already exists
+    const supabase = this.supabaseService.getAdminClient();
+    const { data: existing } = await supabase
+      .from('contacts')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('contact_id', contactId)
+      .single();
+
+    if (existing) {
+      // Update nickname if provided
+      if (nickname) {
+        await supabase
+          .from('contacts')
+          .update({ nickname })
+          .eq('id', existing.id);
+      }
+      return existing;
+    }
+
+    // Create new contact
+    const { data, error } = await supabase
+      .from('contacts')
+      .insert({
+        user_id: userId,
+        contact_id: contactId,
+        nickname,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  }
+
+  async removeContact(userId: string, contactId: string) {
+    const supabase = this.supabaseService.getAdminClient();
+    const { data, error } = await supabase
+      .from('contacts')
+      .delete()
+      .eq('user_id', userId)
+      .eq('contact_id', contactId)
+      .select()
+      .single();
+
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
   }
 }
 
