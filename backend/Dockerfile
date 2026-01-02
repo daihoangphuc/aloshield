@@ -7,8 +7,7 @@ WORKDIR /app
 # Install dependencies only (with cache mount for faster rebuilds)
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --only=production && \
-    npm cache clean --force
+    npm ci --omit=dev
 
 # Stage 2: Builder
 FROM node:20-alpine AS builder
@@ -18,8 +17,7 @@ WORKDIR /app
 # Use cache mount for faster rebuilds
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci && \
-    npm cache clean --force
+    npm ci
 
 # Copy source code
 COPY tsconfig.json nest-cli.json ./

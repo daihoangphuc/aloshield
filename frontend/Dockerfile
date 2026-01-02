@@ -7,8 +7,7 @@ WORKDIR /app
 # Install dependencies only (with cache mount for faster rebuilds)
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci --only=production && \
-    npm cache clean --force
+    npm ci --omit=dev
 
 # Stage 2: Builder
 FROM node:20-alpine AS builder
@@ -34,8 +33,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 # Use cache mount for faster rebuilds
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm ci && \
-    npm cache clean --force
+    npm ci
 
 # Copy configuration files
 COPY next.config.ts tsconfig.json postcss.config.mjs ./
