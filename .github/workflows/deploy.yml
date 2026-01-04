@@ -5,7 +5,7 @@ on:
     branches:
       - main
       - master
-      - refactor/chat-optimization-461835954714615953
+      - refactor/chat-optimization
   workflow_dispatch:
 
 env:
