@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.23.26",
+    "react-virtuoso": "^4.18.1",
+    "tailwind-merge": "^3.4.0"
+  }
+}
