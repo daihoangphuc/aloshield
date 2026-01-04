@@ -21,11 +21,11 @@ interface ChatInputProps {
   isSending: boolean;
   isUploading: boolean;
   onFileSelect: (e: React.ChangeEvent<HTMLInputElement>, isImage: boolean) => void;
-  fileInputRef: React.RefObject<HTMLInputElement>;
-  imageInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  imageInputRef: React.RefObject<HTMLInputElement | null>;
   showStickerPicker: boolean;
   setShowStickerPicker: (show: boolean) => void;
-  textareaRef: React.RefObject<HTMLTextAreaElement>;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   isMobile: boolean;
   isInputFocused: boolean;
   selectedFiles: File[];

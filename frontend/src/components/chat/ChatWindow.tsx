@@ -423,7 +423,13 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
 
     try {
         const uploadPromises = filesToSend.map(async (file) => {
-            const uploadResult = await attachmentsApi.upload(conversationId, file);
+            const uploadResult = await attachmentsApi.upload(conversationId, file) as {
+                attachmentId: string;
+                r2Key: string;
+                fileName: string;
+                fileSize: number;
+                mimeType: string;
+            };
             return { file, uploadResult };
         });
 
@@ -605,7 +611,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     try {
         const { iceServers: turnServers } = await callsApi.getIceServers();
         const response = await socketManager.initiateCall(conversationId, otherParticipant.id, "video") as { callId: string; iceServers?: RTCIceServer[] };
-        initiateCall(response.callId, otherParticipant.id, otherParticipant.display_name, otherParticipant.avatar_url, "video");
+        initiateCall(response.callId, otherParticipant.id, otherParticipant.display_name || otherParticipant.username, otherParticipant.avatar_url, "video");
         await initializePeerConnection(response.iceServers || turnServers);
         const offer = await createOffer();
         socketManager.sendOffer(response.callId, otherParticipant.id, offer);
@@ -617,7 +623,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     try {
         const { iceServers: turnServers } = await callsApi.getIceServers();
         const response = await socketManager.initiateCall(conversationId, otherParticipant.id, "audio") as { callId: string; iceServers?: RTCIceServer[] };
-        initiateCall(response.callId, otherParticipant.id, otherParticipant.display_name, otherParticipant.avatar_url, "audio");
+        initiateCall(response.callId, otherParticipant.id, otherParticipant.display_name || otherParticipant.username, otherParticipant.avatar_url, "audio");
         await initializePeerConnection(response.iceServers || turnServers);
         const offer = await createOffer();
         socketManager.sendOffer(response.callId, otherParticipant.id, offer);

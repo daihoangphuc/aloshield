@@ -122,7 +122,7 @@ export const MessageList = memo(function MessageList({
           new Date(messages[index - 1].created_at).toDateString();
 
       // Ensure stable key
-      const key = msg._renderKey || msg.id;
+      const key = (msg as any)._renderKey || msg.id;
 
       return (
         <div className="px-3 md:px-4 py-1">

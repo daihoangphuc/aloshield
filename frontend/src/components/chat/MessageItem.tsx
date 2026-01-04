@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useCallback, useEffect } from "react";
+import { memo, useMemo, useState, useCallback, useEffect, useRef } from "react";
 import {
   MoreVertical,
   Smile,
@@ -17,6 +17,7 @@ import {
 import { createPortal } from "react-dom";
 import Cookies from "js-cookie";
 import { config } from "@/lib/config";
+import { Message } from "@/lib/api";
 
 // --- Moving Utility Component Here for now to avoid circular dependency issues if I modify ChatWindow too much ---
 const ImageMessage = memo(function ImageMessage({
