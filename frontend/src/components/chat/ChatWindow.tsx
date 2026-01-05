@@ -280,35 +280,45 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   }, [conversationMessages, conversationId, user?.id]);
 
   // 3. Mobile Viewport / Keyboard Handling
+  const [viewportHeight, setViewportHeight] = useState(
+    typeof window !== 'undefined' ? window.innerHeight : 0
+  );
+
   useEffect(() => {
     if (!isMobile) return;
 
-    const handleViewportChange = () => {
+    const handleResize = () => {
       if (window.visualViewport) {
-        const viewport = window.visualViewport;
-        const windowHeight = window.innerHeight;
-        const heightDiff = windowHeight - viewport.height;
+        setViewportHeight(window.visualViewport.height);
         
+        // Calculate keyboard height if needed (optional now)
+        const windowHeight = window.innerHeight;
+        const heightDiff = windowHeight - window.visualViewport.height;
         if (heightDiff > 100) {
           setKeyboardHeight(heightDiff);
         } else {
           setKeyboardHeight(0);
         }
+      } else {
+        setViewportHeight(window.innerHeight);
       }
     };
 
     if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', handleViewportChange);
-      window.visualViewport.addEventListener('scroll', handleViewportChange);
+      window.visualViewport.addEventListener('resize', handleResize);
+      window.visualViewport.addEventListener('scroll', handleResize);
     }
-    window.addEventListener('resize', handleViewportChange);
+    window.addEventListener('resize', handleResize);
+
+    // Initial set
+    handleResize();
 
     return () => {
       if (window.visualViewport) {
-        window.visualViewport.removeEventListener('resize', handleViewportChange);
-        window.visualViewport.removeEventListener('scroll', handleViewportChange);
+         window.visualViewport.removeEventListener('resize', handleResize);
+         window.visualViewport.removeEventListener('scroll', handleResize);
       }
-      window.removeEventListener('resize', handleViewportChange);
+      window.removeEventListener('resize', handleResize);
     };
   }, [isMobile]);
 
@@ -641,7 +651,7 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
   return (
     <div 
       className={`flex-1 flex flex-col ${isMobile ? 'h-screen' : 'h-full'} bg-[var(--chat-bg)] relative overflow-hidden`}
-      style={{ height: isMobile ? '100dvh' : '100%' }}
+      style={{ height: isMobile ? `${viewportHeight}px` : '100%' }}
     >
       <ChatHeader
         otherParticipant={otherParticipant}

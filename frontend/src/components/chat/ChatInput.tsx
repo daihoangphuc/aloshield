@@ -154,33 +154,11 @@ export const ChatInput = memo(function ChatInput({
       {/* Input Area */}
       <div
         ref={inputAreaRef}
-        className={`p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)] ${
-          isMobile ? "pb-4" : ""
-        } z-[95]`}
-        style={
-          isMobile && isInputFocused
-            ? {
-                position: "fixed",
-                bottom: "0px",
-                left: 0,
-                right: 0,
-                paddingBottom: `max(1rem, calc(1rem + env(safe-area-inset-bottom, 0px)))`,
-                paddingLeft: "calc(0.75rem + env(safe-area-inset-left, 0px))",
-                paddingRight: "calc(0.75rem + env(safe-area-inset-right, 0px))",
-                transition: "none",
-                boxShadow: "0 -4px 20px rgba(0, 0, 0, 0.3)",
-                zIndex: 100,
-              }
-            : isMobile
-            ? {
-                paddingBottom: "max(1rem, env(safe-area-inset-bottom, 0px))",
-                position: "relative",
-                transition: "bottom 0.2s ease-out",
-              }
-            : {
-                position: "relative",
-              }
-        }
+        className={`p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)] z-[95]`}
+        style={{
+          position: "relative",
+          paddingBottom: isMobile ? "max(1rem, env(safe-area-inset-bottom, 0px))" : undefined
+        }}
       >
         <input
           ref={imageInputRef}

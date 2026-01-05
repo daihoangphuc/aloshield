@@ -147,17 +147,12 @@ export const MessageList = memo(function MessageList({
   );
 
   // Compute padding bottom
-  // Optimization: If the viewport automatically resizes (which it does on modern mobile browsers with default viewport settings),
-  // we do NOT need to add keyboardHeight to padding. We only need space for the Input component (~80px).
-  // Adding keyboardHeight + InputHeight creates double padding -> "void" space below messages.
   const paddingBottom = useMemo(() => {
-    if (!isMobile) return "1.5rem";
-    // Mobile input area is fixed, so we need padding equal to its visual height (~80px + safe area)
-    // We do NOT add keyboardHeight here because the 100dvh container should shrink when keyboard opens.
-    // If it doesn't shrink, we might need it, but the user report suggests it IS shrinking (pushing messages up) AND adding padding (creating void).
-    // Let's try removing keyboardHeight from padding calculation.
-    return "calc(5.5rem + env(safe-area-inset-bottom, 0px))"; // ~88px
-  }, [isMobile]);
+    // Since ChatWindow now resizes to visualViewport and ChatInput is relative in the flex flow,
+    // we don't need large paddingBottom to clear a fixed input.
+    // Just a small spacer for aesthetics.
+    return "1rem";
+  }, []);
 
   const paddingTop = isMobile
     ? "calc(env(safe-area-inset-top, 0px) + max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) + 70px + 0.75rem + 1.5rem)"
