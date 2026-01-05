@@ -58,16 +58,18 @@ export const MessageList = memo(function MessageList({
     }
   }, [messages.length, atBottom]);
 
-  // Initial Scroll to bottom
+  // Initial Scroll to bottom - using initialTopMostItemIndex is better for startup but scrollToIndex ensures dynamic load is handled
   useEffect(() => {
      if (messages.length > 0 && virtuosoRef.current) {
-       // We use a small timeout to let Virtuoso compute heights
-       setTimeout(() => {
+        // Immediate scroll attempt
+        virtuosoRef.current.scrollToIndex({ index: messages.length - 1, align: "end" });
+        // Retry for safety after layout
+        setTimeout(() => {
           virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: "end" });
-       }, 100);
+        }, 50);
      }
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount if messages exist, or when they first load
+  }, []); // Run once on mount if messages exist
 
   const Header = () => (
     <div className="flex justify-center mb-4 md:mb-6 pt-2 md:pt-2">
@@ -144,15 +146,18 @@ export const MessageList = memo(function MessageList({
     [messages, user?.id, onImageClick, onDownload, onReaction, onDelete, onEdit, onReply]
   );
 
-  // Compute padding bottom based on mobile input state
-  // This logic mimics the original ChatWindow padding calculation
+  // Compute padding bottom
+  // Optimization: If the viewport automatically resizes (which it does on modern mobile browsers with default viewport settings),
+  // we do NOT need to add keyboardHeight to padding. We only need space for the Input component (~80px).
+  // Adding keyboardHeight + InputHeight creates double padding -> "void" space below messages.
   const paddingBottom = useMemo(() => {
     if (!isMobile) return "1.5rem";
-    if (isInputFocused) {
-        return `calc(${keyboardHeight > 0 ? keyboardHeight + 80 : 80}px + env(safe-area-inset-bottom, 0px))`;
-    }
-    return "calc(1.5rem + env(safe-area-inset-bottom, 0px))";
-  }, [isMobile, isInputFocused, keyboardHeight]);
+    // Mobile input area is fixed, so we need padding equal to its visual height (~80px + safe area)
+    // We do NOT add keyboardHeight here because the 100dvh container should shrink when keyboard opens.
+    // If it doesn't shrink, we might need it, but the user report suggests it IS shrinking (pushing messages up) AND adding padding (creating void).
+    // Let's try removing keyboardHeight from padding calculation.
+    return "calc(5.5rem + env(safe-area-inset-bottom, 0px))"; // ~88px
+  }, [isMobile]);
 
   const paddingTop = isMobile
     ? "calc(env(safe-area-inset-top, 0px) + max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) + 70px + 0.75rem + 1.5rem)"
