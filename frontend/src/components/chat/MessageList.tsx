@@ -71,6 +71,11 @@ export const MessageList = memo(function MessageList({
      // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run once on mount if messages exist
 
+  // Optimize initialTopMostItemIndex for performance on first render
+  const initialTopMostItemIndex = useMemo(() => {
+    return messages.length > 0 ? messages.length - 1 : 0;
+  }, [messages.length]);
+
   const Header = () => (
     <div className="flex justify-center mb-4 md:mb-6 pt-2 md:pt-2">
       <div className="glass-card p-3 md:p-4 rounded-2xl max-w-[90%] md:max-w-[85%] flex items-start gap-2 md:gap-3">
@@ -186,6 +191,7 @@ export const MessageList = memo(function MessageList({
             setAtBottom(bottom);
         }}
         followOutput={"auto"}
+        initialTopMostItemIndex={initialTopMostItemIndex}
         alignToBottom={true} // Start at bottom
       />
       <style>{`

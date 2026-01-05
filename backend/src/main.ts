@@ -39,7 +39,7 @@ async function bootstrap() {
       // Use default compression filter
       return compression.filter(req, res);
     },
-    threshold: 1024, // Only compress responses larger than 1KB
+    threshold: 512, // Only compress responses larger than 512B (Optimized for JSON)
     level: 6, // Compression level (1-9, 6 is good balance)
   }));
 
