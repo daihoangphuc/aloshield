@@ -13,21 +13,21 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   constructor(private configService: ConfigService) {}
 
   async onModuleInit() {
+    // Support both REDIS_URL (Render style) and individual REDIS_HOST/PORT/PASSWORD
+    const redisUrl = this.configService.get<string>('REDIS_URL');
     const redisHost = this.configService.get<string>('REDIS_HOST');
     const redisPort = this.configService.get<number>('REDIS_PORT', 6379);
     const redisPassword = this.configService.get<string>('REDIS_PASSWORD');
 
-    if (!redisHost) {
-      this.logger.log('Redis not configured (REDIS_HOST not set) - caching will be disabled');
+    if (!redisUrl && !redisHost) {
+      this.logger.log('Redis not configured (REDIS_URL or REDIS_HOST not set) - caching will be disabled');
       return;
     }
 
     try {
       const nodeEnv = this.configService.get<string>('NODE_ENV', 'development');
       
-      const redisConfig: any = {
-        host: redisHost,
-        port: redisPort,
+      const baseConfig: any = {
         connectTimeout: nodeEnv === 'production' ? 10000 : 5000, // Longer timeout for production
         retryStrategy: (times: number) => {
           // Exponential backoff with max delay of 5 seconds
@@ -45,20 +45,33 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
         lazyConnect: true, // Don't connect immediately
       };
 
-      // Only set password if it's actually provided, not empty, and not just whitespace
-      // Works for both dev (localhost, no password) and prod (redis service name, with password)
-      if (redisPassword && typeof redisPassword === 'string' && redisPassword.trim().length > 0) {
-        redisConfig.password = redisPassword.trim();
+      // Use REDIS_URL if provided (Render, Railway, etc.), otherwise use individual variables
+      if (redisUrl) {
+        this.logger.log(`Connecting to Redis using REDIS_URL...`);
+        this.client = new Redis(redisUrl, baseConfig);
+      } else {
+        const redisConfig: any = {
+          ...baseConfig,
+          host: redisHost,
+          port: redisPort,
+        };
+
+        // Only set password if it's actually provided, not empty, and not just whitespace
+        if (redisPassword && typeof redisPassword === 'string' && redisPassword.trim().length > 0) {
+          redisConfig.password = redisPassword.trim();
+        }
+
+        this.client = new Redis(redisConfig);
       }
 
-      this.client = new Redis(redisConfig);
+      const connectionInfo = redisUrl ? 'REDIS_URL' : `${redisHost}:${redisPort}`;
 
       this.client.on('connect', () => {
-        this.logger.log(`Redis connecting to ${redisHost}:${redisPort}...`);
+        this.logger.log(`Redis connecting to ${connectionInfo}...`);
       });
 
       this.client.on('ready', () => {
-        this.logger.log(`Redis connected successfully to ${redisHost}:${redisPort}`);
+        this.logger.log(`Redis connected successfully to ${connectionInfo}`);
         this.isAvailable = true;
         this.lastErrorLogTime = 0; // Reset error log timer on successful connection
       });
