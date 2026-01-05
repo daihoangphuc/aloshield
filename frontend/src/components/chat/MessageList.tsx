@@ -25,8 +25,6 @@ interface MessageListProps {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   otherParticipant: any;
   isMobile: boolean;
-  keyboardHeight: number;
-  isInputFocused: boolean;
 }
 
 export const MessageList = memo(function MessageList({
@@ -41,8 +39,6 @@ export const MessageList = memo(function MessageList({
   isOtherTyping,
   otherParticipant,
   isMobile,
-  keyboardHeight,
-  isInputFocused,
 }: MessageListProps) {
   const { user } = useAuthStore();
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -50,31 +46,25 @@ export const MessageList = memo(function MessageList({
 
   // Auto scroll to bottom when new messages arrive if we were already at bottom
   useEffect(() => {
-    if (atBottom && virtuosoRef.current) {
-      // Small timeout to ensure DOM is updated
-      setTimeout(() => {
-         virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: "end" });
-      }, 50);
+    if (atBottom && virtuosoRef.current && messages.length > 0) {
+       // Use safe scrolling
+       requestAnimationFrame(() => {
+          virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: "end" });
+       });
     }
   }, [messages.length, atBottom]);
 
-  // Initial Scroll to bottom - using initialTopMostItemIndex is better for startup but scrollToIndex ensures dynamic load is handled
+  // Initial Scroll
   useEffect(() => {
      if (messages.length > 0 && virtuosoRef.current) {
-        // Immediate scroll attempt
-        virtuosoRef.current.scrollToIndex({ index: messages.length - 1, align: "end" });
-        // Retry for safety after layout
-        setTimeout(() => {
-          virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: "end" });
-        }, 50);
+        // "followOutput" sometimes misses the initial render if data loads too fast/slow
+        // We force it once.
+        requestAnimationFrame(() => {
+           virtuosoRef.current?.scrollToIndex({ index: messages.length - 1, align: "end" });
+        });
      }
      // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Run once on mount if messages exist
-
-  // Optimize initialTopMostItemIndex for performance on first render
-  const initialTopMostItemIndex = useMemo(() => {
-    return messages.length > 0 ? messages.length - 1 : 0;
-  }, [messages.length]);
+  }, []);
 
   const Header = () => (
     <div className="flex justify-center mb-4 md:mb-6 pt-2 md:pt-2">
@@ -151,16 +141,6 @@ export const MessageList = memo(function MessageList({
     [messages, user?.id, onImageClick, onDownload, onReaction, onDelete, onEdit, onReply]
   );
 
-  // Compute padding bottom
-  const paddingBottom = useMemo(() => {
-    // Small spacer for aesthetics.
-    return "1rem";
-  }, []);
-
-  // Simplified paddingTop since Header is now relative (flex item) and not fixed.
-  // We just need a small buffer.
-  const paddingTop = "1rem";
-
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -171,9 +151,8 @@ export const MessageList = memo(function MessageList({
 
   return (
     <div
-        className="flex-1 h-full"
+        className="flex-1 h-full relative"
         style={{
-             // Ensure it takes full height but respects parent flex
              minHeight: 0,
              overscrollBehavior: "contain"
         }}
@@ -190,17 +169,12 @@ export const MessageList = memo(function MessageList({
         atBottomStateChange={(bottom) => {
             setAtBottom(bottom);
         }}
+        // Using "auto" followOutput is usually best for chat
         followOutput={"auto"}
-        initialTopMostItemIndex={initialTopMostItemIndex}
-        alignToBottom={true} // Start at bottom
+        initialTopMostItemIndex={messages.length - 1}
+        alignToBottom={true}
       />
       <style>{`
-        /* Custom styles for Virtuoso Scroller to match our layout */
-        div[data-test-id="virtuoso-scroller"] {
-            padding-top: ${paddingTop};
-            padding-bottom: ${paddingBottom};
-        }
-        /* Extra enforcement against iOS bounce */
         div[data-viewport-type="element"] {
             overscroll-behavior-y: none !important;
         }

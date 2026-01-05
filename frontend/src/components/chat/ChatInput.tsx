@@ -1,6 +1,9 @@
 import {
   memo,
   useRef,
+  useState,
+  useCallback,
+  useEffect,
 } from "react";
 import {
   ImageIcon,
@@ -15,47 +18,152 @@ import {
 } from "lucide-react";
 
 interface ChatInputProps {
-  inputValue: string;
-  setInputValue: (value: string) => void;
-  onSend: () => void;
+  onSend: (content: string, files: File[]) => Promise<void>;
+  onTyping: (isTyping: boolean) => void;
   isSending: boolean;
   isUploading: boolean;
-  onFileSelect: (e: React.ChangeEvent<HTMLInputElement>, isImage: boolean) => void;
-  fileInputRef: React.RefObject<HTMLInputElement | null>;
-  imageInputRef: React.RefObject<HTMLInputElement | null>;
   showStickerPicker: boolean;
   setShowStickerPicker: (show: boolean) => void;
-  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   isMobile: boolean;
-  isInputFocused: boolean;
-  selectedFiles: File[];
-  filePreviews: Map<string, string>;
-  onClearFile: (fileName?: string) => void;
-  handlePaste: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
-  handleInputChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
 }
 
 export const ChatInput = memo(function ChatInput({
-  inputValue,
   onSend,
+  onTyping,
   isSending,
   isUploading,
-  onFileSelect,
-  fileInputRef,
-  imageInputRef,
   showStickerPicker,
   setShowStickerPicker,
-  textareaRef,
   isMobile,
-  isInputFocused,
-  selectedFiles,
-  filePreviews,
-  onClearFile,
-  handlePaste,
-  handleInputChange,
 }: ChatInputProps) {
-  const stickerButtonRef = useRef<HTMLButtonElement>(null);
-  const inputAreaRef = useRef<HTMLDivElement>(null);
+  // Local State
+  const [inputValue, setInputValue] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [filePreviews, setFilePreviews] = useState<Map<string, string>>(new Map());
+  const [isTypingLocal, setIsTypingLocal] = useState(false);
+
+  // Refs
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const stickerButtonRef = useRef<HTMLButtonElement>(null); // Added this back
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Typing Logic
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value;
+    setInputValue(value);
+
+    // Auto-resize
+    e.target.style.height = "inherit";
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 96)}px`;
+
+    // Typing indicator
+    if (!isTypingLocal && value.length > 0) {
+      setIsTypingLocal(true);
+      onTyping(true);
+    }
+
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+
+    typingTimeoutRef.current = setTimeout(() => {
+      setIsTypingLocal((prev) => {
+        if (prev) {
+          onTyping(false);
+          return false;
+        }
+        return prev;
+      });
+    }, 2000);
+  }, [isTypingLocal, onTyping]);
+
+  // File Handling
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>, isImage: boolean) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    // Validate size (100MB)
+    const invalidFiles = files.filter(f => f.size > 100 * 1024 * 1024);
+    if (invalidFiles.length > 0) {
+      alert("File quá lớn (>100MB)");
+      return;
+    }
+
+    const newFiles = [...selectedFiles, ...files];
+    setSelectedFiles(newFiles);
+
+    // Previews
+    files.forEach(file => {
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+           setFilePreviews(prev => new Map(prev).set(file.name, e.target?.result as string));
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+
+    e.target.value = '';
+  }, [selectedFiles]);
+
+  const handleClearFile = useCallback((fileName?: string) => {
+    if (fileName) {
+        setSelectedFiles(prev => prev.filter(f => f.name !== fileName));
+        setFilePreviews(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(fileName);
+            return newMap;
+        });
+    } else {
+        setSelectedFiles([]);
+        setFilePreviews(new Map());
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        if (imageInputRef.current) imageInputRef.current.value = "";
+    }
+  }, []);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles: File[] = [];
+
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.indexOf("image") !== -1) {
+        const file = items[i].getAsFile();
+        if (file) imageFiles.push(file);
+      }
+    }
+
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      const event = { target: { files: imageFiles } } as unknown as React.ChangeEvent<HTMLInputElement>;
+      handleFileSelect(event, true);
+    }
+  }, [handleFileSelect]);
+
+  // Sending Logic
+  const handleSendAll = async () => {
+    if ((!inputValue.trim() && selectedFiles.length === 0) || isSending || isUploading) return;
+
+    const contentToSend = inputValue;
+    const filesToSend = [...selectedFiles];
+
+    // Clear state immediately for UI responsiveness
+    setInputValue("");
+    handleClearFile();
+    if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.focus();
+    }
+    if (isTypingLocal) {
+        setIsTypingLocal(false);
+        onTyping(false);
+        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    }
+
+    // Call parent handler
+    await onSend(contentToSend, filesToSend);
+  };
 
   return (
     <>
@@ -69,7 +177,7 @@ export const ChatInput = memo(function ChatInput({
                 {selectedFiles.length} {selectedFiles.length === 1 ? 'tệp đã chọn' : 'tệp đã chọn'}
               </p>
               <button
-                onClick={() => onClearFile()}
+                onClick={() => handleClearFile()}
                 className="text-xs text-[var(--text-muted)] hover:text-white transition-colors"
                 title="Xóa tất cả"
               >
@@ -130,7 +238,7 @@ export const ChatInput = memo(function ChatInput({
 
                     {/* Remove single file button */}
                     <button
-                      onClick={() => onClearFile(file.name)}
+                      onClick={() => handleClearFile(file.name)}
                       className="p-1 hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
                       title="Xóa tệp này"
                     >
@@ -153,7 +261,6 @@ export const ChatInput = memo(function ChatInput({
 
       {/* Input Area */}
       <div
-        ref={inputAreaRef}
         className={`p-3 md:p-4 bg-[var(--chat-bg)] flex items-end gap-2 md:gap-3 flex-shrink-0 border-t border-[var(--border)] z-[95]`}
         style={{
           position: "relative",
@@ -166,7 +273,7 @@ export const ChatInput = memo(function ChatInput({
           accept="image/*"
           multiple
           className="hidden"
-          onChange={(e) => onFileSelect(e, true)}
+          onChange={(e) => handleFileSelect(e, true)}
         />
         <input
           ref={fileInputRef}
@@ -174,7 +281,7 @@ export const ChatInput = memo(function ChatInput({
           accept="*/*"
           multiple
           className="hidden"
-          onChange={(e) => onFileSelect(e, false)}
+          onChange={(e) => handleFileSelect(e, false)}
         />
 
         <div className="flex items-center flex-shrink-0 -ml-1">
@@ -212,19 +319,12 @@ export const ChatInput = memo(function ChatInput({
               // text-[16px] prevents iOS zoom on focus
               rows={1}
               value={inputValue}
-              onChange={(e) => {
-                handleInputChange(e);
-                e.target.style.height = "inherit";
-                e.target.style.height = `${Math.min(
-                  e.target.scrollHeight,
-                  96
-                )}px`;
-              }}
+              onChange={handleInputChange}
               onPaste={handlePaste}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  onSend();
+                  handleSendAll();
                 }
               }}
               disabled={isSending || isUploading}
@@ -245,7 +345,7 @@ export const ChatInput = memo(function ChatInput({
         </div>
 
         <button
-          onClick={onSend}
+          onClick={handleSendAll}
           disabled={
             (!inputValue.trim() && selectedFiles.length === 0) ||
             isSending ||
