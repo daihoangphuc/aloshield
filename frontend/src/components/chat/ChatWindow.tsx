@@ -322,6 +322,14 @@ export function ChatWindow({ conversationId, onBack, isMobile }: ChatWindowProps
     };
   }, [isMobile]);
 
+  // 3b. Add chat-page class to body for global styles
+  useEffect(() => {
+    document.body.classList.add('chat-page');
+    return () => {
+        document.body.classList.remove('chat-page');
+    };
+  }, []);
+
   // 4. Focus Handling
   useEffect(() => {
     if (!isMobile || !textareaRef.current) return;

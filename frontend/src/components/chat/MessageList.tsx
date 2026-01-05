@@ -169,7 +169,8 @@ export const MessageList = memo(function MessageList({
         className="flex-1 h-full"
         style={{
              // Ensure it takes full height but respects parent flex
-             minHeight: 0
+             minHeight: 0,
+             overscrollBehavior: "contain"
         }}
     >
       <Virtuoso
@@ -180,22 +181,22 @@ export const MessageList = memo(function MessageList({
           Header: Header,
           Footer: Footer,
         }}
-        style={{ height: "100%" }}
+        style={{ height: "100%", overscrollBehavior: "none" }}
         atBottomStateChange={(bottom) => {
             setAtBottom(bottom);
         }}
         followOutput={"auto"}
         alignToBottom={true} // Start at bottom
-        // Add padding to container via style prop on the list/scroller
-        // However, Virtuoso handles this better via container class or direct style on the list
-        // We need to apply the specific paddings for the fixed header/footer
       />
       <style>{`
         /* Custom styles for Virtuoso Scroller to match our layout */
         div[data-test-id="virtuoso-scroller"] {
             padding-top: ${paddingTop};
             padding-bottom: ${paddingBottom};
-            transition: padding-bottom 0.2s ease-out;
+        }
+        /* Extra enforcement against iOS bounce */
+        div[data-viewport-type="element"] {
+            overscroll-behavior-y: none !important;
         }
       `}</style>
     </div>
