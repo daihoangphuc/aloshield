@@ -218,8 +218,13 @@ export const MessageItem = memo(function MessageItem({
       )}
 
       {/* Message bubble */}
-      <div className={`flex ${isMe ? "justify-end" : "justify-start"} group relative mb-2`}>
-        <div className={`flex items-end gap-1.5 md:gap-2 max-w-[85%] md:max-w-[75%] ${isMe ? "flex-row-reverse" : ""}`}>
+      <div
+        className={`flex ${isMe ? "justify-end" : "justify-start"} group relative mb-2 px-1`}
+        onClick={() => {
+          // Optional: Add tap to toggle timestamp or actions logic here if strict 'group-active' isn't enough
+        }}
+      >
+        <div className={`flex items-end gap-1.5 md:gap-2 max-w-[85%] md:max-w-[70%] ${isMe ? "flex-row-reverse" : ""}`}>
 
           {/* Avatar for received messages */}
           {!isMe && (
@@ -235,15 +240,23 @@ export const MessageItem = memo(function MessageItem({
           )}
 
           <div className="flex flex-col relative group">
-             {/* Message Actions (Hover) */}
+             {/* Message Actions (Hover or Tap) */}
              {!isDeleted && !msg.id.startsWith("temp-") && (
-                <div className={`absolute top-0 ${isMe ? "left-0 -translate-x-full pr-2" : "right-0 translate-x-full pl-2"} opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 z-10`}>
+                <div
+                  className={`absolute top-0 ${isMe ? "left-0 -translate-x-full pr-2" : "right-0 translate-x-full pl-2"}
+                  opacity-0 group-hover:opacity-100 group-active:opacity-100 focus-within:opacity-100 transition-opacity flex items-center gap-1 z-10
+                  md:opacity-0 md:group-hover:opacity-100`}
+                  // On mobile, tapping the message bubble (which is the parent group) triggers active state
+                  // Alternatively, we can make this always visible on mobile if needed, or toggle on tap.
+                  // For now, using group-active covers the "tap and hold" or "tap" interaction briefly.
+                  // To make it persistent on tap, we would need local state 'isSelected' on the item.
+                >
                   <button
                     onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                    className="p-1.5 hover:bg-white/10 rounded-full transition-colors cursor-pointer"
+                    className="p-2 md:p-1.5 bg-black/20 md:bg-transparent hover:bg-white/10 rounded-full transition-colors cursor-pointer backdrop-blur-sm md:backdrop-blur-none"
                     aria-label="React"
                   >
-                    <Smile size={16} className="text-[var(--text-muted)]" />
+                    <Smile size={18} className="text-[var(--text-muted)] md:w-4 md:h-4" />
                   </button>
 
                   <button
@@ -260,10 +273,10 @@ export const MessageItem = memo(function MessageItem({
                         setActiveMenu(!activeMenu);
                       }
                     }}
-                    className="p-1.5 hover:bg-white/10 rounded-full transition-colors cursor-pointer"
+                    className="p-2 md:p-1.5 bg-black/20 md:bg-transparent hover:bg-white/10 rounded-full transition-colors cursor-pointer backdrop-blur-sm md:backdrop-blur-none"
                     aria-label="More options"
                   >
-                    <MoreVertical size={16} className="text-[var(--text-muted)]" />
+                    <MoreVertical size={18} className="text-[var(--text-muted)] md:w-4 md:h-4" />
                   </button>
                 </div>
               )}

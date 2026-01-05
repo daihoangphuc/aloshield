@@ -63,6 +63,7 @@ body.chat-page {
   position: fixed;
   width: 100%;
   overflow: hidden;
+  overscroll-behavior-y: none; /* Prevent pull-to-refresh on mobile chat */
 }
 
 /* Monospace font for security badges */

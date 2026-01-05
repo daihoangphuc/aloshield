@@ -199,38 +199,39 @@ export const ChatInput = memo(function ChatInput({
           onChange={(e) => onFileSelect(e, false)}
         />
 
-        <div className="flex items-center flex-shrink-0">
+        <div className="flex items-center flex-shrink-0 -ml-1">
           <button
             onClick={() => imageInputRef.current?.click()}
-            className="p-2 md:p-2.5 hover:bg-white/5 rounded-xl transition-all active:scale-90"
+            className="p-3 md:p-2.5 hover:bg-white/5 rounded-xl transition-all active:scale-90"
             title="Đính kèm hình ảnh"
             aria-label="Attach Image"
           >
             <ImageIcon
-              size={20}
-              className="text-[var(--text-muted)] hover:text-[var(--primary)]"
+              size={22}
+              className="text-[var(--text-muted)] hover:text-[var(--primary)] md:w-5 md:h-5"
             />
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-2 md:p-2.5 hover:bg-white/5 rounded-xl transition-all active:scale-90"
+            className="p-3 md:p-2.5 hover:bg-white/5 rounded-xl transition-all active:scale-90"
             title="Đính kèm tệp"
             aria-label="Attach File"
           >
             <Paperclip
-              size={20}
-              className="text-[var(--text-muted)] hover:text-[var(--primary)]"
+              size={22}
+              className="text-[var(--text-muted)] hover:text-[var(--primary)] md:w-5 md:h-5"
             />
           </button>
         </div>
 
         <div className="flex-1 min-w-0 relative group">
           <div className="absolute -inset-0.5 bg-gradient-to-r from-[var(--primary)] to-[var(--accent)] rounded-[20px] md:rounded-[24px] opacity-0 group-focus-within:opacity-30 blur-sm transition-opacity duration-500" />
-          <div className="relative bg-[#0d1117] rounded-[20px] md:rounded-[24px] px-4 py-2.5 md:py-3 flex items-center gap-2 border border-[var(--border)] group-focus-within:border-[var(--primary)]/50 transition-all duration-300">
+          <div className="relative bg-[#0d1117] rounded-[20px] md:rounded-[24px] pl-4 pr-3 py-3 md:py-3 flex items-center gap-2 border border-[var(--border)] group-focus-within:border-[var(--primary)]/50 transition-all duration-300">
             <textarea
               ref={textareaRef}
               placeholder="Nhập tin nhắn..."
-              className="flex-1 bg-transparent border-none outline-none text-white text-[14px] md:text-[15px] placeholder:text-[var(--text-muted)] resize-none max-h-24 min-h-[20px] overflow-y-auto"
+              className="flex-1 bg-transparent border-none outline-none text-white text-[16px] md:text-[15px] placeholder:text-[var(--text-muted)] resize-none max-h-24 min-h-[24px] overflow-y-auto leading-relaxed"
+              // text-[16px] prevents iOS zoom on focus
               rows={1}
               value={inputValue}
               onChange={(e) => {
@@ -254,12 +255,12 @@ export const ChatInput = memo(function ChatInput({
             <button
               ref={stickerButtonRef}
               onClick={() => setShowStickerPicker(!showStickerPicker)}
-              className="p-1 hover:bg-white/10 rounded-full transition-colors active:scale-90 flex-shrink-0 relative"
+              className="p-2 hover:bg-white/10 rounded-full transition-colors active:scale-90 flex-shrink-0 relative -mr-1"
               aria-label="Open Sticker Picker"
             >
               <Layers
-                size={18}
-                className="text-[var(--text-muted)] hover:text-white"
+                size={20}
+                className="text-[var(--text-muted)] hover:text-white md:w-[18px] md:h-[18px]"
               />
             </button>
           </div>
