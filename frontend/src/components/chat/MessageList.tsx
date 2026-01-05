@@ -148,15 +148,13 @@ export const MessageList = memo(function MessageList({
 
   // Compute padding bottom
   const paddingBottom = useMemo(() => {
-    // Since ChatWindow now resizes to visualViewport and ChatInput is relative in the flex flow,
-    // we don't need large paddingBottom to clear a fixed input.
-    // Just a small spacer for aesthetics.
+    // Small spacer for aesthetics.
     return "1rem";
   }, []);
 
-  const paddingTop = isMobile
-    ? "calc(env(safe-area-inset-top, 0px) + max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px))) + 70px + 0.75rem + 1.5rem)"
-    : "calc(80px + 1.5rem)";
+  // Simplified paddingTop since Header is now relative (flex item) and not fixed.
+  // We just need a small buffer.
+  const paddingTop = "1rem";
 
   if (isLoading) {
     return (

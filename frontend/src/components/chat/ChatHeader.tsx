@@ -21,25 +21,19 @@ export const ChatHeader = memo(function ChatHeader({
 }: ChatHeaderProps) {
   return (
     <header
-      className={`flex items-center justify-between px-3 md:px-6 border-b border-[var(--border)] bg-[var(--chat-bg)]/95 backdrop-blur-xl flex-shrink-0 ${
-        isMobile ? "fixed top-0 left-0 right-0 z-30" : "z-10"
-      }`}
-      style={
-        isMobile
-          ? {
-              top: "env(safe-area-inset-top, 0px)",
-              paddingTop: `max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px)))`,
-              paddingBottom: "0.75rem",
-              paddingLeft: "calc(0.75rem + env(safe-area-inset-left, 0px))",
-              paddingRight: "calc(0.75rem + env(safe-area-inset-right, 0px))",
-              minHeight: "70px",
-              height: "auto",
-              boxShadow: "0 2px 10px rgba(0, 0, 0, 0.3)",
-            }
-          : {
-              height: "80px",
-            }
-      }
+      className="flex items-center justify-between px-3 md:px-6 border-b border-[var(--border)] bg-[var(--chat-bg)]/95 backdrop-blur-xl flex-shrink-0 z-10"
+      style={{
+        // For mobile, we add safe-area padding to the top
+        paddingTop: isMobile
+          ? `max(0.75rem, calc(0.75rem + env(safe-area-inset-top, 0px)))`
+          : undefined,
+        height: isMobile ? "auto" : "80px",
+        minHeight: isMobile ? "70px" : undefined,
+        // Ensure horizontal safe areas on mobile if needed, though usually handled by parent or body
+        paddingLeft: isMobile ? "calc(0.75rem + env(safe-area-inset-left, 0px))" : undefined,
+        paddingRight: isMobile ? "calc(0.75rem + env(safe-area-inset-right, 0px))" : undefined,
+        boxShadow: isMobile ? "0 2px 10px rgba(0, 0, 0, 0.3)" : undefined,
+      }}
     >
       <div className="flex items-center gap-2 md:gap-4 min-w-0 flex-1 overflow-hidden">
         {isMobile && (
