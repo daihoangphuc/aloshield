@@ -75,7 +75,7 @@ export class SupabaseService implements OnModuleInit {
   async getUserById(id: string) {
     const { data, error } = await this.supabaseAdmin
       .from('users')
-      .select('*')
+      .select('id, username, display_name, avatar_url, bio, is_online, last_seen_at, email, google_id, created_at, identity_public_key, signed_pre_key, signed_pre_key_signature, supabase_id')
       .eq('id', id)
       .single();
 
