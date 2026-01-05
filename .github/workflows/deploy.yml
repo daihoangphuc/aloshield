@@ -7,6 +7,7 @@ on:
       - master
       - refactor/chat-optimization
       - refactor/chat-optimization-461835954714615953
+      - optimize-performance-fullstack-15156313786622062071
   workflow_dispatch:
 
 env:
